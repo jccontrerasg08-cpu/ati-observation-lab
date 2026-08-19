@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -119,3 +120,9 @@ def test_observe_fails_closed_without_client_hash_key(tmp_path, monkeypatch) -> 
     assert response.status_code == 503
     assert response.headers["Cache-Control"] == "no-store"
     assert not log_path.exists()
+
+
+def test_railway_start_command_disables_uvicorn_access_logs() -> None:
+    railway_config = Path("railway.toml").read_text(encoding="utf-8")
+
+    assert "--no-access-log" in railway_config

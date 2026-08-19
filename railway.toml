@@ -2,7 +2,7 @@
 builder = "RAILPACK"
 
 [deploy]
-startCommand = "uvicorn observation_lab.app:app --host 0.0.0.0 --port $PORT"
+startCommand = "uvicorn observation_lab.app:app --host 0.0.0.0 --port $PORT --no-access-log"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
