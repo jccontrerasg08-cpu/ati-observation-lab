@@ -10,13 +10,20 @@ import httpx
 from observation_lab.app import create_app
 
 
-def request(app: Any, method: str, path: str, **kwargs: Any) -> httpx.Response:
+def request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    client: tuple[str, int] = ("127.0.0.1", 123),
+    **kwargs: Any,
+) -> httpx.Response:
     async def send() -> httpx.Response:
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx.ASGITransport(app=app, client=client)
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
-        ) as client:
-            return await client.request(method, path, **kwargs)
+        ) as http_client:
+            return await http_client.request(method, path, **kwargs)
 
     return asyncio.run(send())
 
@@ -106,6 +113,28 @@ def test_observe_rate_limits_each_pseudonymous_client_without_logging_rejection(
     assert first.status_code == 200
     assert second.status_code == 429
     assert second.headers["Retry-After"] == "60"
+    assert log_path.read_text(encoding="utf-8").count("\n") == 1
+
+
+def test_observe_rate_limits_trusted_proxy_client_across_rotating_peers(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
+    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    monkeypatch.setenv("ATI_RATE_LIMIT_PER_MINUTE", "1")
+    app = create_app()
+    headers = {"X-Forwarded-For": "198.51.100.7, 10.0.0.1"}
+
+    first = request(
+        app, "GET", "/observe", client=("10.0.0.1", 8000), headers=headers
+    )
+    second = request(
+        app, "GET", "/observe", client=("10.0.0.2", 8000), headers=headers
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
     assert log_path.read_text(encoding="utf-8").count("\n") == 1
 
 
