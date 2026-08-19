@@ -98,6 +98,26 @@ def test_observe_discards_invalid_campaign_marker_and_non_get_requests(
     assert serialized.count("\n") == 1
 
 
+def test_observe_supports_head_without_a_response_body(tmp_path, monkeypatch) -> None:
+    log_path = tmp_path / "access.jsonl"
+    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
+    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    app = create_app()
+
+    response = request(
+        app,
+        "HEAD",
+        "/observe",
+        headers={"X-ATI-Experiment-ID": "owned-shadow-2026-08-19-head"},
+    )
+
+    assert response.status_code == 200
+    assert response.content == b""
+    record = json.loads(log_path.read_text(encoding="utf-8"))
+    assert record["request_method"] == "HEAD"
+    assert record["ati_campaign_id"] == "owned-shadow-2026-08-19-head"
+
+
 def test_observe_rate_limits_each_pseudonymous_client_without_logging_rejection(
     tmp_path, monkeypatch
 ) -> None:
