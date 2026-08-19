@@ -64,6 +64,13 @@ def _client_id(raw_address: str) -> str:
     ).hexdigest()
 
 
+def _client_address(request: Request) -> str:
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _campaign_marker(request: Request) -> str | None:
     marker = request.headers.get("X-ATI-Experiment-ID")
     if marker and _CAMPAIGN_ID.fullmatch(marker):
@@ -72,10 +79,9 @@ def _campaign_marker(request: Request) -> str | None:
 
 
 def _record(request: Request, response: Response) -> dict[str, Any]:
-    client_host = request.client.host if request.client else "unknown"
     record: dict[str, Any] = {
         "time_iso8601": datetime.now(UTC).isoformat(),
-        "client_id": _client_id(client_host),
+        "client_id": _client_id(_client_address(request)),
         "request_method": request.method,
         "request_uri": request.url.path,
         "status": response.status_code,
@@ -110,8 +116,7 @@ def create_app() -> FastAPI:
         should_observe = request.method in {"GET", "HEAD"} and request.url.path != "/healthz"
         if should_observe:
             try:
-                client_host = request.client.host if request.client else "unknown"
-                if not limiter.allow(_client_id(client_host)):
+                if not limiter.allow(_client_id(_client_address(request))):
                     return JSONResponse(
                         {"detail": "rate limit exceeded"},
                         status_code=429,
