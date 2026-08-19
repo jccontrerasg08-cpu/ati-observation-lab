@@ -141,7 +141,7 @@ def create_app() -> FastAPI:
             headers={"Cache-Control": "no-store"},
         )
 
-    @app.get("/observe", response_class=JSONResponse)
+    @app.api_route("/observe", methods=["GET", "HEAD"], response_class=JSONResponse)
     async def observe_endpoint() -> JSONResponse:
         return JSONResponse(
             {"status": "observed"}, headers={"Cache-Control": "no-store"}
