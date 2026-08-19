@@ -14,7 +14,7 @@ The laboratory serves only `GET` and `HEAD` observation traffic. For every accep
 | `server_protocol`, `http_user_agent` | Protocol and truncated User-Agent. |
 | `ati_campaign_id` | Optional controlled marker only when `X-ATI-Experiment-ID` matches the strict opaque-marker format. |
 
-It never writes raw IP addresses, query strings, cookies, `Authorization`, request bodies, arbitrary headers, or invalid campaign markers. Health checks and rejected non-`GET`/`HEAD` methods are not logged.
+It never writes raw IP addresses, query strings, cookies, `Authorization`, request bodies, arbitrary headers, or invalid campaign markers. Health checks and rejected non-`GET`/`HEAD` methods are not logged. The Railway start command also disables Uvicorn access logs, because their default request lines can include full query strings.
 
 > The lab deliberately does not trust forwarded-address headers. Depending on the hosting platform, `client_id` can represent the platform proxy rather than the ultimate visitor. This is safe for a first controlled marker campaign; do not treat it as external identity verification.
 
