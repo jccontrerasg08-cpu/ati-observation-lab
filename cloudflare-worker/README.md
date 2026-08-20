@@ -34,16 +34,18 @@ npm test
 
 For local Worker development, create an untracked `.dev.vars` file with synthetic values matching the secret names. Never point a local Worker at a production Railway origin unless the corresponding campaign is explicitly authorized.
 
-## Deployment after domain selection
+## Deployment on Workers.dev
 
-1. Ensure the domain is an active Cloudflare zone and choose a dedicated subdomain such as `observe.example.com`.
-2. Create the Worker from this directory in **Workers & Pages** and add the four secrets in **Settings → Variables and Secrets**.
-3. Add the Custom Domain in **Settings → Domains & Routes**. Cloudflare provisions the DNS record and certificate for a subdomain in the active zone.
-4. Configure the identical origin token as `ATI_TRUSTED_PROXY_TOKEN` in Railway, deploy the backend PR, then deploy this Worker.
-5. Verify a direct `GET` to Railway `/observe` returns `503`. Verify `GET` and `HEAD` through the custom domain return `200` with `Cache-Control: no-store`; verify query strings, credentials, a non-allowlisted marker, and a direct Railway request all fail.
+This account currently has no active Cloudflare zone, so the no-cost deployment uses the public Workers.dev route. Cloudflare documents Workers.dev for personal or hobby projects; migrate to a Custom Domain before treating the service as business-critical.
+
+1. In **Workers & Pages**, configure the account-level `workers.dev` subdomain if Cloudflare prompts for one.
+2. Create the Worker from this directory. Its public hostname will be `ati-observation-proxy.<account-subdomain>.workers.dev`.
+3. Add the four secrets in **Settings → Variables and Secrets**. Do not use plaintext variables or commit a `.dev.vars` file.
+4. Configure the identical origin token as `ATI_TRUSTED_PROXY_TOKEN` in Railway, deploy the backend PR, then deploy this Worker with Workers.dev enabled.
+5. Verify a direct `GET` to Railway `/observe` returns `503`. Verify `GET` and `HEAD` through the Workers.dev hostname return `200` with `Cache-Control: no-store`; verify query strings, credentials, a non-allowlisted marker, and a direct Railway request all fail.
 6. Start with one canary campaign cell and stop immediately on a privacy, availability, or contract failure.
 
-To roll back, detach the Custom Domain from the Worker or restore the prior Worker version, then rotate `ATI_PROXY_ORIGIN_TOKEN` in both places. This blocks new observations but does not delete evidence; apply the campaign’s retention and verified-deletion procedure separately.
+To roll back, disable the Worker's Workers.dev route or restore the prior Worker version, then rotate `ATI_PROXY_ORIGIN_TOKEN` in both places. This blocks new observations but does not delete evidence; apply the campaign’s retention and verified-deletion procedure separately.
 
 ## Privacy controls
 
