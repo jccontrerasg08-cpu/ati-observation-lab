@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import threading
 from collections import OrderedDict, deque
 from datetime import UTC, datetime
@@ -64,11 +65,19 @@ def _client_id(raw_address: str) -> str:
     ).hexdigest()
 
 
-def _client_address(request: Request) -> str:
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip()
-    return request.client.host if request.client else "unknown"
+def _trusted_proxy_client_id(request: Request) -> str:
+    expected_token = os.environ.get("ATI_TRUSTED_PROXY_TOKEN", "")
+    provided_token = request.headers.get("X-ATI-Proxy-Token", "")
+    client_id = request.headers.get("X-ATI-Proxy-Client-ID", "")
+    if not expected_token or not secrets.compare_digest(provided_token, expected_token):
+        raise RuntimeError("trusted proxy authentication failed")
+    if not re.fullmatch(r"hmac-sha256:[0-9a-f]{64}", client_id):
+        raise RuntimeError("trusted proxy client identifier is invalid")
+    return client_id
+
+
+def _observation_client_id(request: Request) -> str:
+    return _client_id(_trusted_proxy_client_id(request))
 
 
 def _campaign_marker(request: Request) -> str | None:
@@ -78,10 +87,10 @@ def _campaign_marker(request: Request) -> str | None:
     return None
 
 
-def _record(request: Request, response: Response) -> dict[str, Any]:
+def _record(request: Request, response: Response, client_id: str) -> dict[str, Any]:
     record: dict[str, Any] = {
         "time_iso8601": datetime.now(UTC).isoformat(),
-        "client_id": _client_id(_client_address(request)),
+        "client_id": client_id,
         "request_method": request.method,
         "request_uri": request.url.path,
         "status": response.status_code,
@@ -116,7 +125,8 @@ def create_app() -> FastAPI:
         should_observe = request.method in {"GET", "HEAD"} and request.url.path != "/healthz"
         if should_observe:
             try:
-                if not limiter.allow(_client_id(_client_address(request))):
+                client_id = _observation_client_id(request)
+                if not limiter.allow(client_id):
                     return JSONResponse(
                         {"detail": "rate limit exceeded"},
                         status_code=429,
@@ -130,7 +140,7 @@ def create_app() -> FastAPI:
                 )
         response = await call_next(request)
         if should_observe:
-            _emit(_record(request, response))
+            _emit(_record(request, response, client_id))
         return response
 
     @app.get("/", response_class=HTMLResponse)
