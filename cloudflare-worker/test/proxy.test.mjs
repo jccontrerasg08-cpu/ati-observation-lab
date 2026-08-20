@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createProxyHandler } from "../src/index.mjs";
@@ -20,6 +21,12 @@ function proxyWithFetch() {
   };
   return { handler: createProxyHandler(fetchFn), requests };
 }
+
+test("enables the Workers.dev fallback when no custom domain is configured", async () => {
+  const configuration = await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+
+  assert.doesNotMatch(configuration, /"workers_dev"\s*:\s*false/);
+});
 
 test("forwards only the allowlisted context with edge-derived pseudonym", async () => {
   const { handler, requests } = proxyWithFetch();
