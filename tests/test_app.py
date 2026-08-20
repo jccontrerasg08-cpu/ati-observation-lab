@@ -9,6 +9,11 @@ import httpx
 
 from observation_lab.app import create_app
 
+_TRUSTED_PROXY_HEADERS = {
+    "X-ATI-Proxy-Token": "test-origin-token",
+    "X-ATI-Proxy-Client-ID": "hmac-sha256:" + "a" * 64,
+}
+
 
 def request(
     app: Any,
@@ -16,24 +21,35 @@ def request(
     path: str,
     *,
     client: tuple[str, int] = ("127.0.0.1", 123),
+    via_trusted_proxy: bool = True,
     **kwargs: Any,
 ) -> httpx.Response:
+    headers = dict(kwargs.pop("headers", {}))
+    if via_trusted_proxy:
+        for name, value in _TRUSTED_PROXY_HEADERS.items():
+            headers.setdefault(name, value)
+
     async def send() -> httpx.Response:
         transport = httpx.ASGITransport(app=app, client=client)
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
         ) as http_client:
-            return await http_client.request(method, path, **kwargs)
+            return await http_client.request(method, path, headers=headers, **kwargs)
 
     return asyncio.run(send())
+
+
+def configure_observation(monkeypatch, log_path: Path) -> None:
+    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
+    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    monkeypatch.setenv("ATI_TRUSTED_PROXY_TOKEN", "test-origin-token")
 
 
 def test_observe_writes_privacy_safe_jsonl_for_allowlisted_campaign_marker(
     tmp_path, monkeypatch
 ) -> None:
     log_path = tmp_path / "access.jsonl"
-    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
-    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    configure_observation(monkeypatch, log_path)
     app = create_app()
 
     response = request(
@@ -62,12 +78,13 @@ def test_observe_writes_privacy_safe_jsonl_for_allowlisted_campaign_marker(
     assert "private@example.com" not in serialized
     assert "do-not-log" not in serialized
     assert "Authorization" not in serialized
+    assert "test-origin-token" not in serialized
+    assert _TRUSTED_PROXY_HEADERS["X-ATI-Proxy-Client-ID"] not in serialized
 
 
 def test_healthz_does_not_create_an_observation_log(tmp_path, monkeypatch) -> None:
     log_path = tmp_path / "access.jsonl"
-    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
-    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    configure_observation(monkeypatch, log_path)
     app = create_app()
 
     response = request(app, "GET", "/healthz")
@@ -81,8 +98,7 @@ def test_observe_discards_invalid_campaign_marker_and_non_get_requests(
     tmp_path, monkeypatch
 ) -> None:
     log_path = tmp_path / "access.jsonl"
-    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
-    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    configure_observation(monkeypatch, log_path)
     app = create_app()
 
     invalid_marker_response = request(
@@ -100,8 +116,7 @@ def test_observe_discards_invalid_campaign_marker_and_non_get_requests(
 
 def test_observe_supports_head_without_a_response_body(tmp_path, monkeypatch) -> None:
     log_path = tmp_path / "access.jsonl"
-    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
-    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    configure_observation(monkeypatch, log_path)
     app = create_app()
 
     response = request(
@@ -122,8 +137,7 @@ def test_observe_rate_limits_each_pseudonymous_client_without_logging_rejection(
     tmp_path, monkeypatch
 ) -> None:
     log_path = tmp_path / "access.jsonl"
-    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
-    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    configure_observation(monkeypatch, log_path)
     monkeypatch.setenv("ATI_RATE_LIMIT_PER_MINUTE", "1")
     app = create_app()
 
@@ -140,17 +154,23 @@ def test_observe_rate_limits_trusted_proxy_client_across_rotating_peers(
     tmp_path, monkeypatch
 ) -> None:
     log_path = tmp_path / "access.jsonl"
-    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
-    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    configure_observation(monkeypatch, log_path)
     monkeypatch.setenv("ATI_RATE_LIMIT_PER_MINUTE", "1")
     app = create_app()
-    headers = {"X-Forwarded-For": "198.51.100.7, 10.0.0.1"}
 
     first = request(
-        app, "GET", "/observe", client=("10.0.0.1", 8000), headers=headers
+        app,
+        "GET",
+        "/observe",
+        client=("10.0.0.1", 8000),
+        headers={"X-Forwarded-For": "198.51.100.7"},
     )
     second = request(
-        app, "GET", "/observe", client=("10.0.0.2", 8000), headers=headers
+        app,
+        "GET",
+        "/observe",
+        client=("10.0.0.2", 8000),
+        headers={"X-Forwarded-For": "203.0.113.9"},
     )
 
     assert first.status_code == 200
@@ -158,10 +178,69 @@ def test_observe_rate_limits_trusted_proxy_client_across_rotating_peers(
     assert log_path.read_text(encoding="utf-8").count("\n") == 1
 
 
+def test_observe_rejects_direct_requests_even_when_xff_is_spoofed(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+
+    response = request(
+        app,
+        "GET",
+        "/observe",
+        via_trusted_proxy=False,
+        headers={
+            "X-Forwarded-For": "198.51.100.7, 10.0.0.1",
+            "X-ATI-Proxy-Client-ID": "hmac-sha256:" + "b" * 64,
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.headers["Cache-Control"] == "no-store"
+    assert not log_path.exists()
+
+
+def test_observe_rejects_invalid_trusted_proxy_token_without_logging(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+
+    response = request(
+        app,
+        "GET",
+        "/observe",
+        headers={"X-ATI-Proxy-Token": "wrong-origin-token"},
+    )
+
+    assert response.status_code == 503
+    assert response.headers["Cache-Control"] == "no-store"
+    assert not log_path.exists()
+
+
+def test_observe_fails_closed_without_trusted_proxy_configuration(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
+    monkeypatch.setenv("ATI_CLIENT_HASH_KEY", "test-client-hash-key")
+    monkeypatch.delenv("ATI_TRUSTED_PROXY_TOKEN", raising=False)
+    app = create_app()
+
+    response = request(app, "GET", "/observe")
+
+    assert response.status_code == 503
+    assert response.headers["Cache-Control"] == "no-store"
+    assert not log_path.exists()
+
+
 def test_observe_fails_closed_without_client_hash_key(tmp_path, monkeypatch) -> None:
     log_path = tmp_path / "access.jsonl"
     monkeypatch.setenv("ATI_LOG_PATH", str(log_path))
     monkeypatch.delenv("ATI_CLIENT_HASH_KEY", raising=False)
+    monkeypatch.setenv("ATI_TRUSTED_PROXY_TOKEN", "test-origin-token")
     app = create_app()
 
     response = request(app, "GET", "/observe")
