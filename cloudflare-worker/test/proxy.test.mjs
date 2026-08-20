@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import test from "node:test";
 
 import { createProxyHandler } from "../src/index.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const ENV = {
   ATI_ALLOWED_CAMPAIGN_IDS: "owned-shadow-2026-08-20-a",
@@ -21,6 +25,23 @@ function proxyWithFetch() {
   };
   return { handler: createProxyHandler(fetchFn), requests };
 }
+
+test("has no unsupported Wrangler configuration fields", async () => {
+  const { stderr, stdout } = await execFileAsync(
+    "npx",
+    [
+      "--yes",
+      "wrangler@4.42.1",
+      "deploy",
+      "--dry-run",
+      "--config",
+      "cloudflare-worker/wrangler.jsonc",
+    ],
+    { cwd: new URL("../..", import.meta.url).pathname },
+  );
+
+  assert.doesNotMatch(`${stdout}${stderr}`, /Unexpected fields found/);
+});
 
 test("enables the Workers.dev fallback when no custom domain is configured", async () => {
   const configuration = await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8");

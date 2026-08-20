@@ -5,13 +5,5 @@
   "compatibility_date": "2026-08-20",
   "observability": {
     "enabled": false
-  },
-  "secrets": {
-    "required": [
-      "ATI_ALLOWED_CAMPAIGN_IDS",
-      "ATI_CLIENT_PSEUDONYM_KEY",
-      "ATI_ORIGIN_URL",
-      "ATI_PROXY_ORIGIN_TOKEN"
-    ]
   }
 }
