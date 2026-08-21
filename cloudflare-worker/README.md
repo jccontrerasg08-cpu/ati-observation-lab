@@ -8,9 +8,9 @@ The Worker accepts only `GET` and `HEAD`, with no query string or fragment. It r
 
 `/observe` supports isolated observations. The `/lab/*` protocol supports controlled multi-step navigation without cookies. A request to `/lab/start` creates a signed, opaque, 15-minute session token in `X-ATI-Lab-Session`; the client presents that token only for later `/lab/*` requests. The Worker validates it and forwards only the HMAC-derived `X-ATI-Proxy-Session-ID` to Railway. It never forwards the raw session token, cookies, visitor IP, query string, credentials, body, or arbitrary client headers.
 
-At the Cloudflare edge, the Worker reads `CF-Connecting-IP`, derives an HMAC-SHA-256 client pseudonym using a private secret, and discards the address before sending the request to Railway. It replaces any client-supplied `X-ATI-Proxy-Token`, `X-ATI-Proxy-Client-ID`, and `X-ATI-Proxy-Session-ID` with private or derived context. Railway requires the token and client pseudonym, so direct requests to its generated domain fail closed.
+On `workers.dev`, the Worker does not derive or claim a visitor identity from IP-address headers. It derives an HMAC-SHA-256 campaign scope from the allowlisted marker using a private secret and discards all visitor-address headers before sending the request to Railway. It replaces any client-supplied `X-ATI-Proxy-Token`, `X-ATI-Proxy-Client-ID`, and `X-ATI-Proxy-Session-ID` with private or derived context. Railway requires the token and campaign scope, so direct requests to its generated domain fail closed.
 
-> Client and session pseudonyms support rate limiting and experiment grouping only. They are not an assertion of visitor identity and are not inputs for ground-truth labels or detector features.
+> Campaign and session pseudonyms support campaign-wide rate limiting and grouped navigation only. They are not an assertion of visitor identity and are not inputs for ground-truth labels or detector features.
 
 ## Runtime configuration
 
@@ -20,7 +20,7 @@ The Worker has two **versioned non-secret variables** in `wrangler.jsonc` so Git
 |---|---|---|
 | Versioned variable | `ATI_ALLOWED_CAMPAIGN_IDS` | Comma-separated allowlist for the active controlled campaign. |
 | Versioned variable | `ATI_ORIGIN_URL` | Exact HTTPS Railway origin, with no path, query, or fragment. |
-| Cloudflare secret | `ATI_CLIENT_PSEUDONYM_KEY` | Random key for the edge client HMAC. |
+| Cloudflare secret | `ATI_CLIENT_PSEUDONYM_KEY` | Random key for the edge campaign-scope HMAC. |
 | Cloudflare secret | `ATI_PROXY_ORIGIN_TOKEN` | Random token shared only with Railway as `ATI_TRUSTED_PROXY_TOKEN`. |
 | Cloudflare secret | `ATI_SESSION_SIGNING_KEY` | Random key that signs and validates the opaque laboratory session token. |
 
@@ -45,7 +45,7 @@ This account currently has no active Cloudflare zone, so the no-cost deployment 
 2. Connect the Worker to this directory in the GitHub repository. Deployments must use `wrangler.jsonc` so the two public variables remain reproducible.
 3. Add the three secrets in **Settings → Variables and Secrets**. Do not use plaintext variables or commit a `.dev.vars` file.
 4. Configure the identical origin token as `ATI_TRUSTED_PROXY_TOKEN` in Railway before deploying a Worker revision that needs it.
-5. Verify direct `GET` to Railway `/observe` returns `503`. Verify `GET` and `HEAD` through Workers.dev return `200` and `Cache-Control: no-store`; verify query strings, credentials, cookies, a non-allowlisted marker, invalid sessions, and a direct Railway request all fail.
+5. Verify direct `GET` to Railway `/observe` returns `503`. Verify `GET` and `HEAD` through Workers.dev return `200` and `Cache-Control: no-store`; verify client-supplied `CF-Connecting-IP` does not alter the campaign scope, and verify query strings, credentials, cookies, a non-allowlisted marker, invalid sessions, and a direct Railway request all fail.
 6. Start with one canary session and stop immediately on privacy, availability, or contract failure.
 
 To roll back, restore the prior Worker version, then rotate `ATI_PROXY_ORIGIN_TOKEN` in both places. This blocks new observations but does not delete evidence; apply the campaign’s retention and verified-deletion procedure separately.
