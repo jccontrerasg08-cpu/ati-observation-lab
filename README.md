@@ -10,6 +10,7 @@ The laboratory serves only `GET` and `HEAD` observation traffic. For every accep
 
 | Field | Purpose |
 |---|---|
+| `request_id` | Fresh random 128-bit opaque identifier used only to correlate a local observation with its local ground-truth label. |
 | `time_iso8601` | Time of the accepted request. |
 | `client_id` | Keyed BLAKE2b pseudonym of the opaque HMAC identifier generated at the trusted edge. |
 | `request_method`, `request_uri`, `status`, `body_bytes_sent` | Request metadata; the URI is always path-only. |

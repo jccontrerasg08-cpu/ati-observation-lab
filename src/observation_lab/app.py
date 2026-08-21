@@ -89,6 +89,7 @@ def _campaign_marker(request: Request) -> str | None:
 
 def _record(request: Request, response: Response, client_id: str) -> dict[str, Any]:
     record: dict[str, Any] = {
+        "request_id": secrets.token_hex(16),
         "time_iso8601": datetime.now(UTC).isoformat(),
         "client_id": client_id,
         "request_method": request.method,
