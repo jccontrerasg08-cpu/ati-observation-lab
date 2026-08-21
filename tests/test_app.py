@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +81,25 @@ def test_observe_writes_privacy_safe_jsonl_for_allowlisted_campaign_marker(
     assert "Authorization" not in serialized
     assert "test-origin-token" not in serialized
     assert _TRUSTED_PROXY_HEADERS["X-ATI-Proxy-Client-ID"] not in serialized
+
+
+def test_observe_writes_distinct_opaque_request_ids_for_label_correlation(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+
+    first = request(app, "GET", "/observe")
+    second = request(app, "GET", "/observe")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    request_ids = [record["request_id"] for record in records]
+    assert len(request_ids) == 2
+    assert request_ids[0] != request_ids[1]
+    assert all(re.fullmatch(r"[0-9a-f]{32}", request_id) for request_id in request_ids)
 
 
 def test_healthz_does_not_create_an_observation_log(tmp_path, monkeypatch) -> None:
