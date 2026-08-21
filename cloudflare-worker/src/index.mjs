@@ -64,11 +64,13 @@ async function clientPseudonym(clientAddress, key) {
   return "hmac-sha256:" + Array.from(await hmac(clientAddress, key), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function issueLabSession(key, now = Date.now()) {
+async function issueLabSession(key, campaign, now = Date.now()) {
   const nonce = new Uint8Array(16);
   crypto.getRandomValues(nonce);
   const payload = base64UrlEncode(
-    encoder.encode(JSON.stringify({ e: Math.floor(now / 1000) + SESSION_TTL_SECONDS, n: base64UrlEncode(nonce) })),
+    encoder.encode(
+      JSON.stringify({ c: campaign, e: Math.floor(now / 1000) + SESSION_TTL_SECONDS, n: base64UrlEncode(nonce) }),
+    ),
   );
   const signature = base64UrlEncode(await hmac(`ati-session-v1.${payload}`, key));
   return `ati1.${payload}.${signature}`;
@@ -78,7 +80,7 @@ async function sessionPseudonym(token, key) {
   return clientPseudonym(`ati-session-id-v1:${token}`, key);
 }
 
-async function validLabSession(token, key, now = Date.now()) {
+async function validLabSession(token, key, campaign, now = Date.now()) {
   const parts = token?.split(".");
   if (parts?.length !== 3 || parts[0] !== "ati1") {
     return false;
@@ -97,7 +99,11 @@ async function validLabSession(token, key, now = Date.now()) {
       return false;
     }
     const decoded = JSON.parse(decoder.decode(payload));
-    return Number.isSafeInteger(decoded.e) && decoded.e > Math.floor(now / 1000);
+    return (
+      decoded.c === campaign
+      && Number.isSafeInteger(decoded.e)
+      && decoded.e > Math.floor(now / 1000)
+    );
   } catch {
     return false;
   }
@@ -162,11 +168,6 @@ export function createProxyHandler(fetchFn = fetch) {
       return reject(403);
     }
 
-    const clientAddress = request.headers.get("CF-Connecting-IP");
-    if (!clientAddress || clientAddress.includes(",")) {
-      return reject(503);
-    }
-
     let target;
     try {
       target = originUrl(env.ATI_ORIGIN_URL, request.url);
@@ -177,14 +178,17 @@ export function createProxyHandler(fetchFn = fetch) {
     let sessionToken;
     let proxySessionId;
     if (isLabPath) {
+      if (!marker) {
+        return reject(403);
+      }
       if (requestUrl.pathname === "/lab/start") {
         if (request.headers.has("X-ATI-Lab-Session")) {
           return reject(403);
         }
-        sessionToken = await issueLabSession(env.ATI_SESSION_SIGNING_KEY);
+        sessionToken = await issueLabSession(env.ATI_SESSION_SIGNING_KEY, marker);
       } else {
         sessionToken = request.headers.get("X-ATI-Lab-Session");
-        if (!(await validLabSession(sessionToken, env.ATI_SESSION_SIGNING_KEY))) {
+        if (!(await validLabSession(sessionToken, env.ATI_SESSION_SIGNING_KEY, marker))) {
           return reject(403);
         }
       }
@@ -195,7 +199,10 @@ export function createProxyHandler(fetchFn = fetch) {
     headers.set("X-ATI-Proxy-Token", env.ATI_PROXY_ORIGIN_TOKEN);
     headers.set(
       "X-ATI-Proxy-Client-ID",
-      await clientPseudonym(clientAddress, env.ATI_CLIENT_PSEUDONYM_KEY),
+      await clientPseudonym(
+        marker ? `ati-campaign-scope-v1:${marker}` : "ati-unmarked-scope-v1",
+        env.ATI_CLIENT_PSEUDONYM_KEY,
+      ),
     );
     headers.set("User-Agent", request.headers.get("User-Agent")?.slice(0, 512) ?? "");
     if (proxySessionId) {

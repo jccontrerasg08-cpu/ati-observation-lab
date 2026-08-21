@@ -56,17 +56,7 @@ test("declares reproducible non-secret runtime configuration", async () => {
   );
 
   assert.deepEqual(configuration.vars, {
-    ATI_ALLOWED_CAMPAIGN_IDS: [
-      "owned-eval-2026-08-21-curl",
-      "owned-eval-2026-08-21-requests",
-      "owned-eval-2026-08-21-httpx",
-      "owned-eval-2026-08-21-aiohttp",
-      "owned-eval-2026-08-21-wget",
-      "owned-eval-2026-08-21-head",
-      "owned-eval-2026-08-21-playwright",
-      "owned-eval-2026-08-21-selenium",
-      "owned-eval-2026-08-21-puppeteer",
-    ].join(","),
+    ATI_ALLOWED_CAMPAIGN_IDS: "owned-workersdev-2026-08-21-pilot",
     ATI_ORIGIN_URL: "https://ati-observation-lab-production.up.railway.app",
   });
 });
@@ -218,6 +208,7 @@ test("issues an opaque lab session and forwards only its derived identifier", as
     new Request("https://observe.example/lab/page/landing", {
       headers: {
         "CF-Connecting-IP": "198.51.100.7",
+        "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a",
         "X-ATI-Lab-Session": session,
       },
     }),
@@ -257,4 +248,73 @@ test("rejects invalid lab sessions and cookies before forwarding", async () => {
     assert.equal(response.status, request.headers.has("Cookie") ? 400 : 403);
     assert.equal(requests.length, 0);
   }
+});
+
+
+test("uses a campaign scope when Workers.dev has no edge client IP", async () => {
+  const { handler, requests } = proxyWithFetch();
+
+  const response = await handler(
+    new Request("https://observe.example/observe", {
+      headers: { "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a" },
+    }),
+    ENV,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].headers.get("X-ATI-Proxy-Client-ID"), /^hmac-sha256:[0-9a-f]{64}$/);
+});
+
+test("derives the same campaign scope despite client-supplied CF-Connecting-IP", async () => {
+  const { handler, requests } = proxyWithFetch();
+  const headers = { "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a" };
+
+  await handler(
+    new Request("https://observe.example/observe", {
+      headers: { ...headers, "CF-Connecting-IP": "198.51.100.7" },
+    }),
+    ENV,
+  );
+  await handler(
+    new Request("https://observe.example/observe", {
+      headers: { ...headers, "CF-Connecting-IP": "203.0.113.9" },
+    }),
+    ENV,
+  );
+
+  assert.equal(requests.length, 2);
+  assert.equal(
+    requests[0].headers.get("X-ATI-Proxy-Client-ID"),
+    requests[1].headers.get("X-ATI-Proxy-Client-ID"),
+  );
+});
+
+test("binds each lab session to the campaign that issued it", async () => {
+  const { handler, requests } = proxyWithFetch();
+  const env = {
+    ...ENV,
+    ATI_ALLOWED_CAMPAIGN_IDS: "owned-shadow-2026-08-20-a,owned-shadow-2026-08-20-b",
+  };
+
+  const start = await handler(
+    new Request("https://observe.example/lab/start", {
+      headers: { "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a" },
+    }),
+    env,
+  );
+  const session = start.headers.get("X-ATI-Lab-Session");
+  const page = await handler(
+    new Request("https://observe.example/lab/page/landing", {
+      headers: {
+        "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-b",
+        "X-ATI-Lab-Session": session,
+      },
+    }),
+    env,
+  );
+
+  assert.equal(start.status, 200);
+  assert.equal(page.status, 403);
+  assert.equal(requests.length, 1);
 });
