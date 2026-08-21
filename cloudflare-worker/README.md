@@ -4,24 +4,27 @@ This directory contains the minimal Cloudflare Worker that forms the trusted edg
 
 ## Request contract
 
-The Worker accepts only `GET` and `HEAD` requests for `/observe` without a query string or fragment. It rejects requests that include `Cookie`, `Authorization`, or `Proxy-Authorization`; it does not forward any visitor-supplied header except the optional `User-Agent` and an allowlisted opaque campaign marker.
+The Worker accepts only `GET` and `HEAD`, with no query string or fragment. It rejects `Cookie`, `Authorization`, and `Proxy-Authorization` before forwarding. The closed route catalogue is `/observe`, `/lab/start`, `/lab/page/landing`, `/lab/page/catalog`, `/lab/page/detail`, `/lab/assets/site.css`, `/lab/assets/pixel.svg`, and `/lab/missing`.
 
-At the Cloudflare edge, the Worker reads `CF-Connecting-IP`, derives an HMAC-SHA-256 pseudonym using a private secret, and discards the address before sending the request to Railway. It replaces any client-supplied `X-ATI-Proxy-Token` and `X-ATI-Proxy-Client-ID` with an origin token and generated pseudonym. Railway requires both values, so direct requests to its generated domain fail closed.
+`/observe` supports isolated observations. The `/lab/*` protocol supports controlled multi-step navigation without cookies. A request to `/lab/start` creates a signed, opaque, 15-minute session token in `X-ATI-Lab-Session`; the client presents that token only for later `/lab/*` requests. The Worker validates it and forwards only the HMAC-derived `X-ATI-Proxy-Session-ID` to Railway. It never forwards the raw session token, cookies, visitor IP, query string, credentials, body, or arbitrary client headers.
 
-> The pseudonym is an operational key for a controlled-campaign rate limit, not an assertion of a visitor’s identity.
+At the Cloudflare edge, the Worker reads `CF-Connecting-IP`, derives an HMAC-SHA-256 client pseudonym using a private secret, and discards the address before sending the request to Railway. It replaces any client-supplied `X-ATI-Proxy-Token`, `X-ATI-Proxy-Client-ID`, and `X-ATI-Proxy-Session-ID` with private or derived context. Railway requires the token and client pseudonym, so direct requests to its generated domain fail closed.
 
-## Required secrets
+> Client and session pseudonyms support rate limiting and experiment grouping only. They are not an assertion of visitor identity and are not inputs for ground-truth labels or detector features.
 
-Define all four values as Cloudflare Worker **secrets**. Do not place them in `wrangler.jsonc`, Git, a campaign manifest, a browser, or a log.
+## Runtime configuration
 
-| Secret | Value | Rotation scope |
+The Worker has two **versioned non-secret variables** in `wrangler.jsonc` so Git-connected builds cannot silently remove them. Campaign markers are opaque identifiers, not secrets; changing them requires a reviewed PR.
+
+| Type | Name | Purpose |
 |---|---|---|
-| `ATI_ALLOWED_CAMPAIGN_IDS` | Comma-separated allowlist of current opaque campaign IDs. | Before and after every campaign. |
-| `ATI_CLIENT_PSEUDONYM_KEY` | Random secret used only by the Worker HMAC. | Every campaign or retention window. |
-| `ATI_ORIGIN_URL` | Exact HTTPS Railway origin, with no path, query, or fragment. | When the Railway domain changes. |
-| `ATI_PROXY_ORIGIN_TOKEN` | Random secret shared only with Railway as `ATI_TRUSTED_PROXY_TOKEN`. | Before every campaign and on suspected exposure. |
+| Versioned variable | `ATI_ALLOWED_CAMPAIGN_IDS` | Comma-separated allowlist for the active controlled campaign. |
+| Versioned variable | `ATI_ORIGIN_URL` | Exact HTTPS Railway origin, with no path, query, or fragment. |
+| Cloudflare secret | `ATI_CLIENT_PSEUDONYM_KEY` | Random key for the edge client HMAC. |
+| Cloudflare secret | `ATI_PROXY_ORIGIN_TOKEN` | Random token shared only with Railway as `ATI_TRUSTED_PROXY_TOKEN`. |
+| Cloudflare secret | `ATI_SESSION_SIGNING_KEY` | Random key that signs and validates the opaque laboratory session token. |
 
-The Railway application must have the exact same value for `ATI_TRUSTED_PROXY_TOKEN`, while its `ATI_CLIENT_HASH_KEY` remains separate. No secret value is committed to the repository.
+No secret value belongs in Git, a campaign manifest, browser-visible content, or a log. `ATI_SESSION_SIGNING_KEY` is independent from both other Worker secrets. Railway retains only `ATI_CLIENT_HASH_KEY`, `ATI_TRUSTED_PROXY_TOKEN`, and `ATI_RATE_LIMIT_PER_MINUTE`.
 
 ## Local verification
 
@@ -32,20 +35,20 @@ cd cloudflare-worker
 npm test
 ```
 
-For local Worker development, create an untracked `.dev.vars` file with synthetic values matching the secret names. Never point a local Worker at a production Railway origin unless the corresponding campaign is explicitly authorized.
+For local Worker development, create an untracked `.dev.vars` file with synthetic values matching all three secret names and both non-secret variables. Never point a local Worker at a production Railway origin unless the matching campaign is explicitly authorized.
 
 ## Deployment on Workers.dev
 
 This account currently has no active Cloudflare zone, so the no-cost deployment uses the public Workers.dev route. Cloudflare documents Workers.dev for personal or hobby projects; migrate to a Custom Domain before treating the service as business-critical.
 
 1. In **Workers & Pages**, configure the account-level `workers.dev` subdomain if Cloudflare prompts for one.
-2. Create the Worker from this directory. Its public hostname will be `ati-observation-proxy.<account-subdomain>.workers.dev`.
-3. Add the four secrets in **Settings → Variables and Secrets**. Do not use plaintext variables or commit a `.dev.vars` file.
-4. Configure the identical origin token as `ATI_TRUSTED_PROXY_TOKEN` in Railway, deploy the backend PR, then deploy this Worker with Workers.dev enabled.
-5. Verify a direct `GET` to Railway `/observe` returns `503`. Verify `GET` and `HEAD` through the Workers.dev hostname return `200` with `Cache-Control: no-store`; verify query strings, credentials, a non-allowlisted marker, and a direct Railway request all fail.
-6. Start with one canary campaign cell and stop immediately on a privacy, availability, or contract failure.
+2. Connect the Worker to this directory in the GitHub repository. Deployments must use `wrangler.jsonc` so the two public variables remain reproducible.
+3. Add the three secrets in **Settings → Variables and Secrets**. Do not use plaintext variables or commit a `.dev.vars` file.
+4. Configure the identical origin token as `ATI_TRUSTED_PROXY_TOKEN` in Railway before deploying a Worker revision that needs it.
+5. Verify direct `GET` to Railway `/observe` returns `503`. Verify `GET` and `HEAD` through Workers.dev return `200` and `Cache-Control: no-store`; verify query strings, credentials, cookies, a non-allowlisted marker, invalid sessions, and a direct Railway request all fail.
+6. Start with one canary session and stop immediately on privacy, availability, or contract failure.
 
-To roll back, disable the Worker's Workers.dev route or restore the prior Worker version, then rotate `ATI_PROXY_ORIGIN_TOKEN` in both places. This blocks new observations but does not delete evidence; apply the campaign’s retention and verified-deletion procedure separately.
+To roll back, restore the prior Worker version, then rotate `ATI_PROXY_ORIGIN_TOKEN` in both places. This blocks new observations but does not delete evidence; apply the campaign’s retention and verified-deletion procedure separately.
 
 ## Privacy controls
 

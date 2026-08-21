@@ -16,7 +16,28 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 _CAMPAIGN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_PROXY_SESSION_ID = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
 _WRITE_LOCK = threading.Lock()
+_LAB_CONTENT: dict[str, tuple[int, str, str]] = {
+    "/lab/page/landing": (
+        200,
+        "text/html",
+        '<main><h1>ATI Lab Landing</h1><a href="/lab/page/catalog">Catalog</a></main>',
+    ),
+    "/lab/page/catalog": (
+        200,
+        "text/html",
+        '<main><h1>ATI Lab Catalog</h1><a href="/lab/page/detail">Detail</a></main>',
+    ),
+    "/lab/page/detail": (200, "text/html", "<main><h1>ATI Lab Detail</h1></main>"),
+    "/lab/assets/site.css": (200, "text/css", "main{max-width:48rem;margin:2rem auto}"),
+    "/lab/assets/pixel.svg": (
+        200,
+        "image/svg+xml",
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>',
+    ),
+    "/lab/missing": (404, "text/plain", "not found"),
+}
 
 
 class _RateLimiter:
@@ -76,6 +97,15 @@ def _trusted_proxy_client_id(request: Request) -> str:
     return client_id
 
 
+def _trusted_proxy_session_id(request: Request) -> str | None:
+    if not request.url.path.startswith("/lab/"):
+        return None
+    session_id = request.headers.get("X-ATI-Proxy-Session-ID", "")
+    if not _PROXY_SESSION_ID.fullmatch(session_id):
+        raise ValueError("trusted proxy session identifier is invalid")
+    return session_id
+
+
 def _observation_client_id(request: Request) -> str:
     return _client_id(_trusted_proxy_client_id(request))
 
@@ -87,7 +117,12 @@ def _campaign_marker(request: Request) -> str | None:
     return None
 
 
-def _record(request: Request, response: Response, client_id: str) -> dict[str, Any]:
+def _record(
+    request: Request,
+    response: Response,
+    client_id: str,
+    session_id: str | None = None,
+) -> dict[str, Any]:
     record: dict[str, Any] = {
         "request_id": secrets.token_hex(16),
         "time_iso8601": datetime.now(UTC).isoformat(),
@@ -99,6 +134,8 @@ def _record(request: Request, response: Response, client_id: str) -> dict[str, A
         "server_protocol": f"HTTP/{request.scope.get('http_version', 'unknown')}",
         "http_user_agent": request.headers.get("user-agent", "")[:512],
     }
+    if session_id:
+        record["session_id"] = session_id
     marker = _campaign_marker(request)
     if marker:
         record["ati_campaign_id"] = marker
@@ -115,6 +152,10 @@ def _emit(record: dict[str, Any]) -> None:
                 stream.write(serialized + "\n")
 
 
+def _rejected_response(status: int) -> JSONResponse:
+    return JSONResponse({"detail": "invalid observation request"}, status_code=status, headers={"Cache-Control": "no-store"})
+
+
 def create_app() -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     limiter = _RateLimiter(
@@ -123,16 +164,27 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def observe(request: Request, call_next):  # type: ignore[no-untyped-def]
+        is_lab_path = request.url.path.startswith("/lab/")
+        if is_lab_path and (
+            request.url.query
+            or request.headers.get("cookie")
+            or request.url.path not in _LAB_CONTENT
+        ):
+            return _rejected_response(400)
+
         should_observe = request.method in {"GET", "HEAD"} and request.url.path != "/healthz"
         if should_observe:
             try:
                 client_id = _observation_client_id(request)
+                session_id = _trusted_proxy_session_id(request)
                 if not limiter.allow(client_id):
                     return JSONResponse(
                         {"detail": "rate limit exceeded"},
                         status_code=429,
                         headers={"Retry-After": "60", "Cache-Control": "no-store"},
                     )
+            except ValueError:
+                return _rejected_response(403)
             except RuntimeError:
                 return JSONResponse(
                     {"detail": "observation unavailable"},
@@ -141,7 +193,7 @@ def create_app() -> FastAPI:
                 )
         response = await call_next(request)
         if should_observe:
-            _emit(_record(request, response, client_id))
+            _emit(_record(request, response, client_id, session_id))
         return response
 
     @app.get("/", response_class=HTMLResponse)
@@ -156,6 +208,17 @@ def create_app() -> FastAPI:
     async def observe_endpoint() -> JSONResponse:
         return JSONResponse(
             {"status": "observed"}, headers={"Cache-Control": "no-store"}
+        )
+
+    @app.api_route("/lab/{resource:path}", methods=["GET", "HEAD"])
+    async def lab_resource(resource: str) -> Response:
+        path = f"/lab/{resource}"
+        status, media_type, content = _LAB_CONTENT[path]
+        return Response(
+            content=content,
+            status_code=status,
+            media_type=media_type,
+            headers={"Cache-Control": "no-store"},
         )
 
     @app.get("/healthz", response_class=JSONResponse)

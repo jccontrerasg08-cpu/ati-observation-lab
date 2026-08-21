@@ -274,3 +274,70 @@ def test_railway_start_command_disables_uvicorn_access_logs() -> None:
     railway_config = Path("railway.toml").read_text(encoding="utf-8")
 
     assert "--no-access-log" in railway_config
+
+
+def test_lab_page_requires_proxy_derived_session_and_logs_only_opaque_value(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+    session_id = "hmac-sha256:" + "c" * 64
+
+    rejected = request(app, "GET", "/lab/page/landing")
+    accepted = request(
+        app,
+        "GET",
+        "/lab/page/landing",
+        headers={
+            "X-ATI-Proxy-Session-ID": session_id,
+            "X-ATI-Experiment-ID": "owned-general-2026-08-21-playwright",
+        },
+    )
+
+    assert rejected.status_code == 403
+    assert rejected.headers["Cache-Control"] == "no-store"
+    assert accepted.status_code == 200
+    assert accepted.headers["Content-Type"].startswith("text/html")
+    assert 'href="/lab/page/catalog"' in accepted.text
+    record = json.loads(log_path.read_text(encoding="utf-8"))
+    assert record["request_uri"] == "/lab/page/landing"
+    assert record["session_id"] == session_id
+    assert record["ati_campaign_id"] == "owned-general-2026-08-21-playwright"
+    assert "X-ATI-Proxy-Session-ID" not in log_path.read_text(encoding="utf-8")
+
+
+def test_lab_assets_support_get_and_head_with_equivalent_metadata(tmp_path, monkeypatch) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+    headers = {"X-ATI-Proxy-Session-ID": "hmac-sha256:" + "d" * 64}
+
+    get_response = request(app, "GET", "/lab/assets/site.css", headers=headers)
+    head_response = request(app, "HEAD", "/lab/assets/site.css", headers=headers)
+
+    assert get_response.status_code == 200
+    assert head_response.status_code == 200
+    assert get_response.headers["Content-Type"] == head_response.headers["Content-Type"]
+    assert get_response.headers["Content-Length"] == head_response.headers["Content-Length"]
+    assert get_response.content
+    assert head_response.content == b""
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert [record["request_method"] for record in records] == ["GET", "HEAD"]
+    assert {record["session_id"] for record in records} == {headers["X-ATI-Proxy-Session-ID"]}
+
+
+def test_lab_rejects_query_and_cookie_without_logging(tmp_path, monkeypatch) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+    headers = {
+        "X-ATI-Proxy-Session-ID": "hmac-sha256:" + "e" * 64,
+        "Cookie": "experiment=must-not-reach-lab",
+    }
+
+    response = request(app, "GET", "/lab/page/landing?token=must-not-log", headers=headers)
+
+    assert response.status_code == 400
+    assert response.headers["Cache-Control"] == "no-store"
+    assert not log_path.exists()
