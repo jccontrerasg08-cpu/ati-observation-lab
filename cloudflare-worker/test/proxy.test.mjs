@@ -49,6 +49,27 @@ test("enables the Workers.dev fallback when no custom domain is configured", asy
   assert.doesNotMatch(configuration, /"workers_dev"\s*:\s*false/);
 });
 
+test("declares reproducible non-secret runtime configuration", async () => {
+  const configuration = JSON.parse(
+    await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+  );
+
+  assert.deepEqual(configuration.vars, {
+    ATI_ALLOWED_CAMPAIGN_IDS: [
+      "owned-eval-2026-08-21-curl",
+      "owned-eval-2026-08-21-requests",
+      "owned-eval-2026-08-21-httpx",
+      "owned-eval-2026-08-21-aiohttp",
+      "owned-eval-2026-08-21-wget",
+      "owned-eval-2026-08-21-head",
+      "owned-eval-2026-08-21-playwright",
+      "owned-eval-2026-08-21-selenium",
+      "owned-eval-2026-08-21-puppeteer",
+    ].join(","),
+    ATI_ORIGIN_URL: "https://ati-observation-lab-production.up.railway.app",
+  });
+});
+
 test("forwards only the allowlisted context with edge-derived pseudonym", async () => {
   const { handler, requests } = proxyWithFetch();
 
