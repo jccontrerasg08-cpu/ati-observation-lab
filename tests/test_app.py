@@ -341,3 +341,30 @@ def test_lab_rejects_query_and_cookie_without_logging(tmp_path, monkeypatch) -> 
     assert response.status_code == 400
     assert response.headers["Cache-Control"] == "no-store"
     assert not log_path.exists()
+
+
+def test_lab_start_accepts_proxy_derived_session_and_logs_only_opaque_value(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+    session_id = "hmac-sha256:" + "f" * 64
+
+    response = request(
+        app,
+        "GET",
+        "/lab/start",
+        headers={
+            "X-ATI-Proxy-Session-ID": session_id,
+            "X-ATI-Experiment-ID": "owned-workersdev-2026-08-21-pilot",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("text/html")
+    assert 'href="/lab/page/landing"' in response.text
+    record = json.loads(log_path.read_text(encoding="utf-8"))
+    assert record["request_uri"] == "/lab/start"
+    assert record["session_id"] == session_id
+    assert "X-ATI-Proxy-Session-ID" not in log_path.read_text(encoding="utf-8")
