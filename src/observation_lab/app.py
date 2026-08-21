@@ -19,6 +19,11 @@ _CAMPAIGN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _PROXY_SESSION_ID = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
 _WRITE_LOCK = threading.Lock()
 _LAB_CONTENT: dict[str, tuple[int, str, str]] = {
+    "/lab/start": (
+        200,
+        "text/html",
+        '<main><h1>ATI Lab Start</h1><a href="/lab/page/landing">Continue</a></main>',
+    ),
     "/lab/page/landing": (
         200,
         "text/html",
