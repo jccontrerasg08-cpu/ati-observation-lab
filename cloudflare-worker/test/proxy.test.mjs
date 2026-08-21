@@ -318,3 +318,11 @@ test("binds each lab session to the campaign that issued it", async () => {
   assert.equal(page.status, 403);
   assert.equal(requests.length, 1);
 });
+
+
+test("documents Workers.dev campaign scopes instead of IP-derived client identity", async () => {
+  const guide = await readFile(new URL("../README.md", import.meta.url), "utf8");
+
+  assert.match(guide, /does not derive or claim a visitor identity from IP-address headers/);
+  assert.doesNotMatch(guide, /reads `CF-Connecting-IP`/);
+});
