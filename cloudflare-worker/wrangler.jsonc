@@ -3,6 +3,10 @@
   "name": "ati-observation-proxy",
   "main": "src/index.mjs",
   "compatibility_date": "2026-08-20",
+  "vars": {
+    "ATI_ALLOWED_CAMPAIGN_IDS": "owned-eval-2026-08-21-curl,owned-eval-2026-08-21-requests,owned-eval-2026-08-21-httpx,owned-eval-2026-08-21-aiohttp,owned-eval-2026-08-21-wget,owned-eval-2026-08-21-head,owned-eval-2026-08-21-playwright,owned-eval-2026-08-21-selenium,owned-eval-2026-08-21-puppeteer",
+    "ATI_ORIGIN_URL": "https://ati-observation-lab-production.up.railway.app"
+  },
   "observability": {
     "enabled": false
   }
