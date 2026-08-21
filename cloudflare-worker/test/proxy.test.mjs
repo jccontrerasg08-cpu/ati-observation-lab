@@ -13,6 +13,7 @@ const ENV = {
   ATI_CLIENT_PSEUDONYM_KEY: "test-pseudonym-key",
   ATI_ORIGIN_URL: "https://ati-observation-lab-production.up.railway.app",
   ATI_PROXY_ORIGIN_TOKEN: "test-origin-token",
+  ATI_SESSION_SIGNING_KEY: "test-session-signing-key",
 };
 
 function proxyWithFetch() {
@@ -188,4 +189,72 @@ test("rejects a non-allowlisted campaign marker without forwarding", async () =>
 
   assert.equal(response.status, 403);
   assert.equal(requests.length, 0);
+});
+
+
+test("issues an opaque lab session and forwards only its derived identifier", async () => {
+  const { handler, requests } = proxyWithFetch();
+
+  const start = await handler(
+    new Request("https://observe.example/lab/start", {
+      headers: {
+        "CF-Connecting-IP": "198.51.100.7",
+        "User-Agent": "ControlledBrowser/1.0",
+        "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a",
+      },
+    }),
+    ENV,
+  );
+
+  assert.equal(start.status, 200);
+  const session = start.headers.get("X-ATI-Lab-Session");
+  assert.match(session, /^ati1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "https://ati-observation-lab-production.up.railway.app/lab/start");
+  assert.match(requests[0].headers.get("X-ATI-Proxy-Session-ID"), /^hmac-sha256:[0-9a-f]{64}$/);
+  assert.equal(requests[0].headers.get("X-ATI-Lab-Session"), null);
+
+  const page = await handler(
+    new Request("https://observe.example/lab/page/landing", {
+      headers: {
+        "CF-Connecting-IP": "198.51.100.7",
+        "X-ATI-Lab-Session": session,
+      },
+    }),
+    ENV,
+  );
+
+  assert.equal(page.status, 200);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].url, "https://ati-observation-lab-production.up.railway.app/lab/page/landing");
+  assert.equal(
+    requests[1].headers.get("X-ATI-Proxy-Session-ID"),
+    requests[0].headers.get("X-ATI-Proxy-Session-ID"),
+  );
+  assert.equal(requests[1].headers.get("X-ATI-Lab-Session"), null);
+});
+
+
+test("rejects invalid lab sessions and cookies before forwarding", async () => {
+  const cases = [
+    new Request("https://observe.example/lab/page/landing", {
+      headers: { "CF-Connecting-IP": "198.51.100.7" },
+    }),
+    new Request("https://observe.example/lab/page/landing", {
+      headers: {
+        "CF-Connecting-IP": "198.51.100.7",
+        "X-ATI-Lab-Session": "ati1.invalid.signature",
+      },
+    }),
+    new Request("https://observe.example/lab/start", {
+      headers: { "CF-Connecting-IP": "198.51.100.7", Cookie: "must-not-pass" },
+    }),
+  ];
+
+  for (const request of cases) {
+    const { handler, requests } = proxyWithFetch();
+    const response = await handler(request, ENV);
+    assert.equal(response.status, request.headers.has("Cookie") ? 400 : 403);
+    assert.equal(requests.length, 0);
+  }
 });
