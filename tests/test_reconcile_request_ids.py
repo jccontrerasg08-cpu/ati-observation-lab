@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+def test_reconciler_reports_aggregate_success_without_request_ids(tmp_path: Path) -> None:
+    labels = tmp_path / "labels.jsonl"
+    request_ids = [f"{number:032x}" for number in range(1, 7)]
+    labels.write_text(
+        "".join(
+            json.dumps({"request_id": request_id}, separators=(",", ":")) + "\n"
+            for request_id in request_ids
+        ),
+        encoding="utf-8",
+    )
+    fake_railway = tmp_path / "railway"
+    fake_railway.write_text(
+        "#!/usr/bin/env sh\n"
+        "case \"$*\" in\n"
+        "  *'@request_id:'*) printf '%s\\n' '{\"message\":\"matched\"}' ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_railway.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/reconcile_request_ids.py",
+            "--labels",
+            str(labels),
+            "--project",
+            "project-id",
+            "--service",
+            "service-id",
+            "--environment",
+            "production",
+        ],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "RAILWAY_CLI": str(fake_railway)},
+    )
+
+    summary = json.loads(result.stdout)
+    assert summary["expected"] == 6
+    assert summary["matched"] == 6
+    assert summary["missing"] == 0
+    assert summary["ambiguous"] == 0
+    assert summary["status"] == "complete"
+    assert summary["labels_sha256"]
+    assert not any(request_id in result.stdout for request_id in request_ids)

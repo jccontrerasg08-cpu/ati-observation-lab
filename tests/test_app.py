@@ -46,7 +46,7 @@ def configure_observation(monkeypatch, log_path: Path) -> None:
     monkeypatch.setenv("ATI_TRUSTED_PROXY_TOKEN", "test-origin-token")
 
 
-def test_observe_writes_privacy_safe_jsonl_for_allowlisted_campaign_marker(
+def test_observe_writes_coarse_user_agent_provenance_without_raw_value(
     tmp_path, monkeypatch
 ) -> None:
     log_path = tmp_path / "access.jsonl"
@@ -58,7 +58,7 @@ def test_observe_writes_privacy_safe_jsonl_for_allowlisted_campaign_marker(
         "GET",
         "/observe",
         headers={
-            "User-Agent": "ControlledAgent/1.0",
+            "User-Agent": "curl/8.0.1 ControlledAgent/1.0",
             "X-ATI-Experiment-ID": "owned-shadow-2026-08-19-a",
             "Authorization": "Bearer never-log-this",
             "Cookie": "session=do-not-log",
@@ -72,9 +72,12 @@ def test_observe_writes_privacy_safe_jsonl_for_allowlisted_campaign_marker(
     assert record["ati_campaign_id"] == "owned-shadow-2026-08-19-a"
     assert record["request_method"] == "GET"
     assert record["request_uri"] == "/observe"
-    assert record["http_user_agent"] == "ControlledAgent/1.0"
+    assert record["ua_provenance_bucket"] == "scripted-http"
+    assert "http_user_agent" not in record
     assert record["client_id"].startswith("blake2b:")
     serialized = log_path.read_text(encoding="utf-8")
+    assert "curl/8.0.1" not in serialized
+    assert "ControlledAgent/1.0" not in serialized
     assert "never-log-this" not in serialized
     assert "private@example.com" not in serialized
     assert "do-not-log" not in serialized

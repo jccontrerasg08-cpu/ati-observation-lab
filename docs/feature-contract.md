@@ -20,6 +20,10 @@ No model, baseline, calibration stage, threshold policy, or monitoring job may i
 | Protocol conformance | Valid signed-session continuation count, missing-session rejection count, query/cookie/body violation count in excluded perimeter tests | Use only controlled-session outcomes; rejected perimeter tests are never training examples unless a separate threat model approves them |
 | Aggregated consistency | Number of changes among approved coarse capability buckets, resource-request ratio, session sequence entropy after fixed bucketing | Do not use raw header strings or browser fingerprint surfaces; require cohort-size review for rare combinations |
 
+## Audit-only User-Agent provenance
+
+The origin may derive one of four coarse provenance categories in memory: `absent`, `scripted-http`, `browser-like`, or `other`. It must discard the raw User-Agent immediately. `ua_provenance_bucket` is retained solely for aggregate corpus-composition reporting and is prohibited from feature construction, filtering, preprocessing, feature selection, calibration, threshold selection, model evaluation, drift scoring, and any analyst decision intended to improve a score.
+
 ## Prohibited fields and proxies
 
 The following are prohibited from feature extraction, filtering, feature selection, calibration, threshold selection, drift alerting, or analyst review intended to improve model score:
@@ -31,6 +35,7 @@ The following are prohibited from feature extraction, filtering, feature selecti
 | Browser or device fingerprinting | Canvas/WebGL/audio results, font or plugin lists, screen dimensions, GPU, timezone, language stack, hardware concurrency, high-entropy client hints |
 | Experiment labels and aliases | Campaign marker, family name, provider name, scenario ID, executor host, participant identity, source repository, version label if unique to a class |
 | High-resolution indirect identifiers | Exact timestamp, exact delay vector, full User-Agent, TLS fingerprint, request ordering unique to one class, rare categorical values that identify a session |
+| Audit-only provenance metadata | `ua_provenance_bucket`; it may describe corpus composition but cannot enter any model or score-selection workflow |
 
 ## Split firewall
 
