@@ -63,6 +63,7 @@ test("declares only the approved custom-domain campaign markers", async () => {
       "owned-domain-2026-08-22-httpx",
       "owned-domain-2026-08-22-node-fetch",
       "owned-domain-2026-08-22-playwright-chromium",
+      "owned-domain-2026-08-22-human-consented",
     ].join(","),
     ATI_ORIGIN_URL: "https://ati-observation-lab-production.up.railway.app",
   });
