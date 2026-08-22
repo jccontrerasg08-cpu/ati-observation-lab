@@ -70,6 +70,8 @@ The proxy protects the Custom Domain `observe.ati-observation-lab.com` and uses 
 
 ## Campaign and evaluation protocol
 
+The approved Custom Domain matrix, opaque markers, session sequence, acceptance checks, and corpus exclusions are defined in [the versioned campaign matrix](docs/custom-domain-campaign-matrix.md). Do not reuse the legacy Workers.dev pilot marker for this corpus.
+
 1. Configure and test the trusted edge proxy before opening a campaign.
 2. Choose opaque markers that are not tokens, email addresses, account IDs or secrets. The marker is for local ground truth only and must not become a detector feature.
 3. Start each navigation session at `/lab/start` through the Worker hostname with one allowlisted opaque marker, then execute a manifest-defined sequence across the closed catalogue with that same marker. Carry `X-ATI-Lab-Session` only in that session’s later `/lab/*` requests; do not put it in a cookie or a URL.
