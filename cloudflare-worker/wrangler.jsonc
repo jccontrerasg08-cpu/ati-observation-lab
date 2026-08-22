@@ -4,7 +4,7 @@
   "main": "src/index.mjs",
   "compatibility_date": "2026-08-20",
   "vars": {
-    "ATI_ALLOWED_CAMPAIGN_IDS": "owned-domain-2026-08-22-curl,owned-domain-2026-08-22-wget,owned-domain-2026-08-22-requests,owned-domain-2026-08-22-httpx,owned-domain-2026-08-22-node-fetch,owned-domain-2026-08-22-playwright-chromium,owned-domain-2026-08-22-human-consented",
+    "ATI_ALLOWED_CAMPAIGN_IDS": "owned-domain-2026-08-22-curl,owned-domain-2026-08-22-wget,owned-domain-2026-08-22-requests,owned-domain-2026-08-22-httpx,owned-domain-2026-08-22-node-fetch,owned-domain-2026-08-22-playwright-chromium,owned-domain-2026-08-22-human-consented,owned-domain-2026-08-22-external-cloud-a,owned-domain-2026-08-22-external-cloud-b",
     "ATI_ORIGIN_URL": "https://ati-observation-lab-production.up.railway.app"
   },
   "observability": {

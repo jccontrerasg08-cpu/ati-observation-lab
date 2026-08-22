@@ -18,6 +18,7 @@ The corpus is designed around request-level local correlation and session-level 
 | Controlled HTTP automation | curl, wget, requests, httpx, node-fetch | 4 | Local executor record with approved marker | Approved |
 | Controlled browser automation | Playwright Chromium | 4 | Local executor record with approved marker | Approved |
 | Consent-based human control | One or more informed, consenting participants using their ordinary browser | 4 per consenting participant, preferably across more than one participant | Signed/recorded local consent plus local executor record | Requires separate authorized marker and participant action |
+| Supplemental external automation controls | Two separately instructed, operator-authorized cloud executors using `external-cloud-a` or `external-cloud-b` | One complete session per external executor initially | Executor-local record with opaque response IDs and declared runtime | Optional robustness evidence; never merged into the fixed primary matrix without a versioned manifest update |
 
 Each session must follow the closed catalogue: `GET /lab/start`, `GET /lab/page/landing`, `GET /lab/assets/site.css`, `GET /lab/page/catalog`, `HEAD /lab/page/detail`, and `GET /lab/missing`. The expected status sequence is `200, 200, 200, 200, 200, 404`. A session must use exactly one approved campaign marker and the signed session header only on later `/lab/*` requests.
 
@@ -34,7 +35,7 @@ The human control should use the same route catalogue but a documented pacing va
 
 ## Collection, authorization, and consent
 
-Automation is collected only from executors controlled by the laboratory operator and only with an approved marker. Human control is collected only after the participant reads the consent statement, affirms affirmative consent, understands that participation is optional, and can stop at any point. No participant must provide a name, email address, account, location, IP address, cookie, or browser fingerprint.
+Automation is collected only from executors controlled by the laboratory operator or separately authorized external executors, and only with an approved marker. Human control is collected only after the participant reads the consent statement, affirms affirmative consent, understands that participation is optional, and can stop at any point. No participant or external executor must provide a name, email address, account, location, IP address, cookie, browser fingerprint, system prompt, or unrelated output.
 
 Participants and third-party agents must not access any route outside the closed catalogue, alter headers beyond the approved marker and session protocol, send query strings, cookies, credentials, bodies, prompts, or personal data, or use the endpoint for production browsing.
 
