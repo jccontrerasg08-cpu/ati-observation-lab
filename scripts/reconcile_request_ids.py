@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 _REQUEST_ID = re.compile(r"^[0-9a-f]{32}$")
+_BATCH_SIZE = 24
 
 
 def load_request_ids(labels_path: Path) -> list[str]:
@@ -33,8 +34,11 @@ def load_request_ids(labels_path: Path) -> list[str]:
 
 
 def matching_log_count(
-    railway_cli: str, project: str, service: str, environment: str, request_id: str
+    railway_cli: str, project: str, service: str, environment: str, request_ids: list[str]
 ) -> int:
+    if not request_ids:
+        return 0
+    query = " OR ".join(f"@request_id:{request_id}" for request_id in request_ids)
     command = [
         railway_cli,
         "logs",
@@ -45,9 +49,9 @@ def matching_log_count(
         "--environment",
         environment,
         "--lines",
-        "2",
+        str(len(request_ids) + 1),
         "--filter",
-        f"@request_id:{request_id}",
+        query,
         "--json",
     ]
     result = subprocess.run(command, check=True, capture_output=True, text=True)
@@ -59,16 +63,19 @@ def reconcile(args: argparse.Namespace) -> dict[str, object]:
     request_ids = load_request_ids(labels)
     railway_cli = os.environ.get("RAILWAY_CLI", "railway")
     matched = missing = ambiguous = 0
-    for request_id in request_ids:
+    for start in range(0, len(request_ids), _BATCH_SIZE):
+        batch = request_ids[start : start + _BATCH_SIZE]
         count = matching_log_count(
-            railway_cli, args.project, args.service, args.environment, request_id
+            railway_cli, args.project, args.service, args.environment, batch
         )
-        if count == 1:
-            matched += 1
-        elif count == 0:
-            missing += 1
+        if count == len(batch):
+            matched += len(batch)
+        elif count < len(batch):
+            matched += count
+            missing += len(batch) - count
         else:
-            ambiguous += 1
+            matched += len(batch)
+            ambiguous += count - len(batch)
     checksum = hashlib.sha256(labels.read_bytes()).hexdigest()
     return {
         "ambiguous": ambiguous,
