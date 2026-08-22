@@ -51,11 +51,12 @@ ati campaign plan \
   --output curl-plan.json
 ```
 
-Keep plans, local executor records, local labels, and exported JSONL in an access-controlled working directory outside the repository. Labels should reference the local request correlation identifier and the approved family declaration only. They must not add raw client addresses, full User-Agent strings beyond the approved token, cookies, credentials, request bodies, query strings, arbitrary headers, or session tokens.
+For every accepted response, capture `X-ATI-Request-ID` in the executor’s local record and use that opaque value to join the local label to the exported JSONL record. The identifier is random correlation context only: do not treat it as an authentication credential, client identifier, session token, or IP address. Keep plans, local executor records, local labels, and exported JSONL in an access-controlled working directory outside the repository. Labels should reference the local request correlation identifier and the approved family declaration only. They must not add raw client addresses, full User-Agent strings beyond the approved token, cookies, credentials, request bodies, query strings, arbitrary headers, or session tokens.
 
 ## Acceptance and stop conditions
 
-A family is ready for collection only when its independent sessions complete the closed sequence with the expected statuses, each record has the approved campaign marker, each `/lab/*` record has an opaque session pseudonym, and `ati campaign validate-runtime` reports no incompatible or missing-session records for that family. The operational acceptance suite must also show a 200 response through the Custom Domain, a 503 response from the direct Railway origin, and rejection of prohibited perimeter inputs.
+A family is ready for collection only when its independent sessions complete the closed sequence with the expected statuses, each accepted response returns an opaque `X-ATI-Request-ID` that matches one exported JSONL record, each record has the approved campaign marker, each `/lab/*` record has an opaque session pseudonym, and `ati campaign validate-runtime` reports no incompatible or missing-session records for that family.
+The operational acceptance suite must also show a 200 response through the Custom Domain, a 503 response from the direct Railway origin, and rejection of prohibited perimeter inputs.
 
 Stop the campaign immediately if a prohibited field appears in a record or label, a direct Railway request succeeds, a session crosses campaign markers, the configured rate limit causes unexpected failures, a runtime does not produce the expected session sequence, or a client family cannot be labeled from a local controlled execution record. Preserve the minimum necessary evidence for diagnosis and follow the retention and verified-deletion procedure before retrying.
 
