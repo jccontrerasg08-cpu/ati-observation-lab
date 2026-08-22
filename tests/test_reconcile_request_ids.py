@@ -167,3 +167,56 @@ def test_reconciler_scopes_batch_query_to_explicit_deployment(tmp_path: Path) ->
 
     assert "historical-deployment-id" in arguments.read_text(encoding="utf-8")
     assert json.loads(result.stdout)["status"] == "complete"
+
+
+def test_reconciler_rejects_duplicate_log_when_another_request_id_is_missing(
+    tmp_path: Path,
+) -> None:
+    labels = tmp_path / "labels.jsonl"
+    request_ids = [f"{number:032x}" for number in range(1, 4)]
+    labels.write_text(
+        "".join(
+            json.dumps({"request_id": request_id}, separators=(",", ":")) + "\n"
+            for request_id in request_ids
+        ),
+        encoding="utf-8",
+    )
+    fake_railway = tmp_path / "railway"
+    fake_railway.write_text(
+        "#!/usr/bin/env sh\n"
+        "printf '%s\\n' "
+        f"'{{\"request_id\":\"{request_ids[0]}\"}}' "
+        f"'{{\"request_id\":\"{request_ids[0]}\"}}' "
+        f"'{{\"request_id\":\"{request_ids[1]}\"}}'\n",
+        encoding="utf-8",
+    )
+    fake_railway.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/reconcile_request_ids.py",
+            "--labels",
+            str(labels),
+            "--project",
+            "project-id",
+            "--service",
+            "service-id",
+            "--environment",
+            "production",
+            "--deployment",
+            "deployment-id",
+        ],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "RAILWAY_CLI": str(fake_railway)},
+    )
+
+    summary = json.loads(result.stdout)
+    assert summary["matched"] == 1
+    assert summary["missing"] == 1
+    assert summary["ambiguous"] == 1
+    assert summary["status"] == "incomplete"
+    assert not any(request_id in result.stdout for request_id in request_ids)

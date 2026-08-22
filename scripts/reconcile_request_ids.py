@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 _REQUEST_ID = re.compile(r"^[0-9a-f]{32}$")
@@ -33,16 +34,16 @@ def load_request_ids(labels_path: Path) -> list[str]:
     return request_ids
 
 
-def matching_log_count(
+def matching_log_counts(
     railway_cli: str,
     project: str,
     service: str,
     environment: str,
     deployment: str,
     request_ids: list[str],
-) -> int:
+) -> Counter[str]:
     if not request_ids:
-        return 0
+        return Counter()
     query = " OR ".join(f"@request_id:{request_id}" for request_id in request_ids)
     command = [
         railway_cli,
@@ -61,7 +62,16 @@ def matching_log_count(
         "--json",
     ]
     result = subprocess.run(command, check=True, capture_output=True, text=True)
-    return sum(1 for line in result.stdout.splitlines() if line.strip())
+    requested_ids = set(request_ids)
+    counts: Counter[str] = Counter()
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        request_id = row.get("request_id")
+        if request_id in requested_ids:
+            counts[request_id] += 1
+    return counts
 
 
 def reconcile(args: argparse.Namespace) -> dict[str, object]:
@@ -71,7 +81,7 @@ def reconcile(args: argparse.Namespace) -> dict[str, object]:
     matched = missing = ambiguous = 0
     for start in range(0, len(request_ids), _BATCH_SIZE):
         batch = request_ids[start : start + _BATCH_SIZE]
-        count = matching_log_count(
+        counts = matching_log_counts(
             railway_cli,
             args.project,
             args.service,
@@ -79,14 +89,9 @@ def reconcile(args: argparse.Namespace) -> dict[str, object]:
             args.deployment,
             batch,
         )
-        if count == len(batch):
-            matched += len(batch)
-        elif count < len(batch):
-            matched += count
-            missing += len(batch) - count
-        else:
-            matched += len(batch)
-            ambiguous += count - len(batch)
+        matched += sum(count == 1 for count in counts.values())
+        missing += sum(request_id not in counts for request_id in batch)
+        ambiguous += sum(count - 1 for count in counts.values() if count > 1)
     checksum = hashlib.sha256(labels.read_bytes()).hexdigest()
     return {
         "ambiguous": ambiguous,
