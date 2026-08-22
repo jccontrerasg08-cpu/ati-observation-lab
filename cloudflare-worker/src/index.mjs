@@ -14,6 +14,7 @@ const LAB_PATHS = new Set([
   "/lab/missing",
 ]);
 const SESSION_TTL_SECONDS = 15 * 60;
+const TRUSTED_CUSTOM_DOMAIN = "observe.ati-observation-lab.com";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -119,6 +120,17 @@ function validConfiguration(env) {
   );
 }
 
+function clientIdentityScope(request, requestUrl, marker) {
+  const edgeAddress = requestUrl.hostname === TRUSTED_CUSTOM_DOMAIN
+    ? request.headers.get("CF-Connecting-IP")
+    : null;
+  return edgeAddress
+    ? `ati-edge-address-v1:${edgeAddress}`
+    : marker
+      ? `ati-campaign-scope-v1:${marker}`
+      : "ati-unmarked-scope-v1";
+}
+
 function originUrl(value, requestUrl) {
   const configured = new URL(value);
   if (configured.protocol !== "https:" || configured.search || configured.hash) {
@@ -200,7 +212,7 @@ export function createProxyHandler(fetchFn = fetch) {
     headers.set(
       "X-ATI-Proxy-Client-ID",
       await clientPseudonym(
-        marker ? `ati-campaign-scope-v1:${marker}` : "ati-unmarked-scope-v1",
+        clientIdentityScope(request, requestUrl, marker),
         env.ATI_CLIENT_PSEUDONYM_KEY,
       ),
     );
