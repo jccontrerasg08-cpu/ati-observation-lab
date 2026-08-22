@@ -102,6 +102,23 @@ def test_observe_writes_distinct_opaque_request_ids_for_label_correlation(
     assert all(re.fullmatch(r"[0-9a-f]{32}", request_id) for request_id in request_ids)
 
 
+def test_observe_returns_logged_opaque_request_id_for_local_correlation(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+
+    response = request(app, "GET", "/observe")
+
+    assert response.status_code == 200
+    request_id = response.headers.get("X-ATI-Request-ID")
+    assert request_id is not None
+    assert re.fullmatch(r"[0-9a-f]{32}", request_id)
+    record = json.loads(log_path.read_text(encoding="utf-8"))
+    assert record["request_id"] == request_id
+
+
 def test_healthz_does_not_create_an_observation_log(tmp_path, monkeypatch) -> None:
     log_path = tmp_path / "access.jsonl"
     configure_observation(monkeypatch, log_path)

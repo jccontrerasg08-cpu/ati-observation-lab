@@ -10,7 +10,7 @@ The laboratory serves only `GET` and `HEAD` observation traffic. For every accep
 
 | Field | Purpose |
 |---|---|
-| `request_id` | Fresh random 128-bit opaque identifier used only to correlate a local observation with its local ground-truth label. |
+| `request_id` | Fresh random 128-bit opaque identifier returned only in `X-ATI-Request-ID` for the controlled executor to correlate a local observation with its local ground-truth label. It is not an authentication credential, client identifier, or IP address. |
 | `time_iso8601` | Time of the accepted request. |
 | `client_id` | Keyed BLAKE2b pseudonym of the opaque scope generated at the trusted edge. It is derived from the campaign scope on Workers.dev and all other hosts; at `observe.ati-observation-lab.com` it is a second-layer pseudonym of the edge address scope. It never contains a raw address or direct client identifier. |
 | `session_id` | Optional edge-derived HMAC for a single `/lab/*` navigation session; it is absent for isolated `/observe`. |

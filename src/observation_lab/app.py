@@ -126,10 +126,11 @@ def _record(
     request: Request,
     response: Response,
     client_id: str,
+    request_id: str,
     session_id: str | None = None,
 ) -> dict[str, Any]:
     record: dict[str, Any] = {
-        "request_id": secrets.token_hex(16),
+        "request_id": request_id,
         "time_iso8601": datetime.now(UTC).isoformat(),
         "client_id": client_id,
         "request_method": request.method,
@@ -196,9 +197,12 @@ def create_app() -> FastAPI:
                     status_code=503,
                     headers={"Cache-Control": "no-store"},
                 )
+        if should_observe:
+            request_id = secrets.token_hex(16)
         response = await call_next(request)
         if should_observe:
-            _emit(_record(request, response, client_id, session_id))
+            response.headers["X-ATI-Request-ID"] = request_id
+            _emit(_record(request, response, client_id, request_id, session_id))
         return response
 
     @app.get("/", response_class=HTMLResponse)
