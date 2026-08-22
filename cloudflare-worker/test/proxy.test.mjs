@@ -50,13 +50,20 @@ test("enables the Workers.dev fallback when no custom domain is configured", asy
   assert.doesNotMatch(configuration, /"workers_dev"\s*:\s*false/);
 });
 
-test("declares reproducible non-secret runtime configuration", async () => {
+test("declares only the approved custom-domain campaign markers", async () => {
   const configuration = JSON.parse(
     await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
   );
 
   assert.deepEqual(configuration.vars, {
-    ATI_ALLOWED_CAMPAIGN_IDS: "owned-workersdev-2026-08-21-pilot",
+    ATI_ALLOWED_CAMPAIGN_IDS: [
+      "owned-domain-2026-08-22-curl",
+      "owned-domain-2026-08-22-wget",
+      "owned-domain-2026-08-22-requests",
+      "owned-domain-2026-08-22-httpx",
+      "owned-domain-2026-08-22-node-fetch",
+      "owned-domain-2026-08-22-playwright-chromium",
+    ].join(","),
     ATI_ORIGIN_URL: "https://ati-observation-lab-production.up.railway.app",
   });
 });
