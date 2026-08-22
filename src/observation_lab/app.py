@@ -17,6 +17,16 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 _CAMPAIGN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _PROXY_SESSION_ID = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
+_SCRIPTED_USER_AGENT_MARKERS = (
+    "aiohttp",
+    "curl",
+    "go-http-client",
+    "httpx",
+    "node-fetch",
+    "python-requests",
+    "undici",
+    "wget",
+)
 _WRITE_LOCK = threading.Lock()
 _LAB_CONTENT: dict[str, tuple[int, str, str]] = {
     "/lab/start": (
@@ -122,6 +132,17 @@ def _campaign_marker(request: Request) -> str | None:
     return None
 
 
+def _ua_provenance_bucket(user_agent: str) -> str:
+    normalized = user_agent.lower()
+    if not normalized:
+        return "absent"
+    if any(marker in normalized for marker in _SCRIPTED_USER_AGENT_MARKERS):
+        return "scripted-http"
+    if any(marker in normalized for marker in ("mozilla/", "chrome/", "edg/", "firefox/", "safari/")):
+        return "browser-like"
+    return "other"
+
+
 def _record(
     request: Request,
     response: Response,
@@ -138,7 +159,7 @@ def _record(
         "status": response.status_code,
         "body_bytes_sent": int(response.headers.get("content-length", "0")),
         "server_protocol": f"HTTP/{request.scope.get('http_version', 'unknown')}",
-        "http_user_agent": request.headers.get("user-agent", "")[:512],
+        "ua_provenance_bucket": _ua_provenance_bucket(request.headers.get("user-agent", "")),
     }
     if session_id:
         record["session_id"] = session_id

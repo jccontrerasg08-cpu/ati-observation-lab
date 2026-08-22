@@ -28,10 +28,14 @@ The human control should use the same route catalogue but a documented pacing va
 
 | Category | Policy |
 |---|---|
-| Retained in exported JSONL | Existing privacy-approved request ID, coarse timestamp, opaque client pseudonym, opaque session pseudonym when applicable, method, closed path, status, response size, protocol, approved User-Agent token/bucket, approved campaign marker |
+| Retained in exported JSONL | Existing privacy-approved request ID, coarse timestamp, opaque client pseudonym, opaque session pseudonym when applicable, method, closed path, status, response size, protocol, `ua_provenance_bucket` (`absent`, `scripted-http`, `browser-like`, or `other`), approved campaign marker |
 | Retained in local label file | Opaque request ID, documented condition/family, boolean controlled-automation label, scenario version, session-local sequence number |
 | Prohibited | Raw IP addresses, geolocation, cookies, query strings, request or response bodies, Authorization values, arbitrary headers, account identifiers, prompts, tool arguments, browser fingerprinting surfaces, raw signed session headers |
-| Prohibited as model features | Request ID, campaign marker, client/session pseudonym, raw or exact User-Agent, provider, executor identity, participant identity, exact timestamp, scenario identifier, route names unique to a class |
+| Prohibited as model features | Request ID, campaign marker, client/session pseudonym, raw or exact User-Agent, `ua_provenance_bucket`, provider, executor identity, participant identity, exact timestamp, scenario identifier, route names unique to a class |
+
+## User-Agent provenance boundary
+
+The origin derives `ua_provenance_bucket` in memory and immediately discards the raw User-Agent. The bucket is limited to `absent`, `scripted-http`, `browser-like`, or `other`. It may be reported only as aggregate corpus composition and must never be used for feature construction, preprocessing, calibration, threshold selection, model evaluation, drift scoring, filtering, or analyst decisions intended to improve score.
 
 ## Collection, authorization, and consent
 
