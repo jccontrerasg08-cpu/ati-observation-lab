@@ -368,6 +368,15 @@ test("binds each lab session to the campaign that issued it", async () => {
 });
 
 
+test("documents the custom-domain client pseudonym in the repository privacy contract", async () => {
+  const guide = await readFile(new URL("../../README.md", import.meta.url), "utf8");
+
+  assert.match(guide, /`observe\.ati-observation-lab\.com`/);
+  assert.match(guide, /edge client address/);
+  assert.match(guide, /campaign scope on Workers\.dev/);
+  assert.match(guide, /per-pseudonym limit/);
+});
+
 test("documents Workers.dev campaign scopes instead of IP-derived client identity", async () => {
   const guide = await readFile(new URL("../README.md", import.meta.url), "utf8");
 
