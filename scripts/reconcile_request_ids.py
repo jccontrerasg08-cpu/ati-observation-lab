@@ -34,7 +34,12 @@ def load_request_ids(labels_path: Path) -> list[str]:
 
 
 def matching_log_count(
-    railway_cli: str, project: str, service: str, environment: str, request_ids: list[str]
+    railway_cli: str,
+    project: str,
+    service: str,
+    environment: str,
+    deployment: str,
+    request_ids: list[str],
 ) -> int:
     if not request_ids:
         return 0
@@ -42,6 +47,7 @@ def matching_log_count(
     command = [
         railway_cli,
         "logs",
+        deployment,
         "--project",
         project,
         "--service",
@@ -66,7 +72,12 @@ def reconcile(args: argparse.Namespace) -> dict[str, object]:
     for start in range(0, len(request_ids), _BATCH_SIZE):
         batch = request_ids[start : start + _BATCH_SIZE]
         count = matching_log_count(
-            railway_cli, args.project, args.service, args.environment, batch
+            railway_cli,
+            args.project,
+            args.service,
+            args.environment,
+            args.deployment,
+            batch,
         )
         if count == len(batch):
             matched += len(batch)
@@ -93,6 +104,7 @@ def main() -> int:
     parser.add_argument("--project", required=True)
     parser.add_argument("--service", required=True)
     parser.add_argument("--environment", required=True)
+    parser.add_argument("--deployment", required=True)
     args = parser.parse_args()
     try:
         print(json.dumps(reconcile(args), separators=(",", ":"), sort_keys=True))
