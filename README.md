@@ -4,7 +4,7 @@ This repository is a **separate, privacy-first FastAPI laboratory** for controll
 
 ## Trust boundary and recorded data
 
-The application accepts observations only from a configured trusted proxy. On the `workers.dev` deployment, the proxy must not derive or claim a visitor identity from IP-address headers. Instead, it derives an opaque HMAC **campaign scope** from the allowlisted marker and sends it with a private origin token. For controlled `/lab/*` navigation, the Worker additionally derives an opaque session pseudonym bound to that same campaign and forwards it as `X-ATI-Proxy-Session-ID`; the raw session token is never sent to Railway. The application rejects direct requests and invalid proxy context with `503`; invalid or missing laboratory session context receives `403`. It never falls back to `CF-Connecting-IP`, `X-Forwarded-For`, `X-Real-IP`, the immediate Railway peer, a cookie, or a client-supplied proxy session identifier.
+The application accepts observations only from a configured trusted proxy. Only at `observe.ati-observation-lab.com`, the Cloudflare Worker derives an opaque HMAC scope from the edge client address in `CF-Connecting-IP`; it sends only that HMAC-derived scope with a private origin token, never the raw address. On Workers.dev and every other hostname, the Worker derives the opaque **campaign scope** from the allowlisted marker instead. For controlled `/lab/*` navigation, the Worker additionally derives an opaque session pseudonym bound to that same campaign and forwards it as `X-ATI-Proxy-Session-ID`; the raw session token is never sent to Railway. The application rejects direct requests and invalid proxy context with `503`; invalid or missing laboratory session context receives `403`. The application itself never falls back to `CF-Connecting-IP`, `X-Forwarded-For`, `X-Real-IP`, the immediate Railway peer, a cookie, or a client-supplied proxy session identifier.
 
 The laboratory serves only `GET` and `HEAD` observation traffic. For every accepted observation it emits one JSONL record to standard output and, when `ATI_LOG_PATH` is set, to a local file. The record is compatible with `agent-traffic-intelligence` JSONL input and includes only:
 
@@ -12,7 +12,7 @@ The laboratory serves only `GET` and `HEAD` observation traffic. For every accep
 |---|---|
 | `request_id` | Fresh random 128-bit opaque identifier used only to correlate a local observation with its local ground-truth label. |
 | `time_iso8601` | Time of the accepted request. |
-| `client_id` | Keyed BLAKE2b pseudonym of the opaque campaign scope generated at the trusted edge. It is **not** a client, person, device, or IP identifier on `workers.dev`. |
+| `client_id` | Keyed BLAKE2b pseudonym of the opaque scope generated at the trusted edge. It is derived from the campaign scope on Workers.dev and all other hosts; at `observe.ati-observation-lab.com` it is a second-layer pseudonym of the edge address scope. It never contains a raw address or direct client identifier. |
 | `session_id` | Optional edge-derived HMAC for a single `/lab/*` navigation session; it is absent for isolated `/observe`. |
 | `request_method`, `request_uri`, `status`, `body_bytes_sent` | Request metadata; the URI is always path-only and belongs to the closed route catalogue. |
 | `server_protocol`, `http_user_agent` | Protocol and truncated User-Agent. |
@@ -20,7 +20,7 @@ The laboratory serves only `GET` and `HEAD` observation traffic. For every accep
 
 It never writes raw IP addresses, raw session tokens, query strings, cookies, `Authorization`, request bodies, arbitrary headers, proxy tokens, or invalid campaign markers. Health checks and rejected methods are not logged. The Railway start command also disables Uvicorn access logs, because their default request lines can include full query strings.
 
-> On `workers.dev`, the edge pseudonyms support campaign-wide rate limiting and grouped evaluation only. A campaign marker proves that a request belongs to an authorized experiment, not the identity, device, network, or intention of an external party.
+> On `workers.dev`, the edge pseudonyms support campaign-wide rate limiting and grouped evaluation only. At `observe.ati-observation-lab.com`, the address-derived edge pseudonym can support a campaign-approved per-pseudonym limit, but it is still not a label or an assertion of identity, device, network, or intent. A campaign marker proves only that a request belongs to an authorized experiment.
 
 ## Controlled navigation catalogue
 
@@ -61,12 +61,12 @@ The repository contains `railway.toml` but does not select or create any Railway
 
 | Variable | Required | Purpose |
 |---|---:|---|
-| `ATI_CLIENT_HASH_KEY` | Yes | Unique long random secret held only in Railway to derive the exported campaign-scope pseudonym. |
+| `ATI_CLIENT_HASH_KEY` | Yes | Unique long random secret held only in Railway to derive the exported pseudonym from the opaque scope supplied by the trusted edge. |
 | `ATI_TRUSTED_PROXY_TOKEN` | Yes | Separate long random secret shared only with the trusted edge proxy. |
-| `ATI_RATE_LIMIT_PER_MINUTE` | Yes | `30` or another campaign-approved campaign-wide limit. |
+| `ATI_RATE_LIMIT_PER_MINUTE` | Yes | `30` or another campaign-approved per-pseudonym limit. |
 | `ATI_LOG_PATH` | No | Leave unset on Railway; use captured standard-output logs. |
 
-The proxy must protect the public observation hostname and use the shared token only in its proxy-to-Railway request. Do not expose that token to visitors, source control, logs, error reports, or campaign manifests. The Railway-generated domain remains an origin endpoint and is expected to reject direct observation attempts. The current `workers.dev` deployment intentionally has no trusted per-client identity; use a dedicated personal domain behind Cloudflare before claiming IP-derived client limits. Do not add login, CAPTCHA, application forms, a production database, reused production secrets, cookies, or persistence for laboratory sessions.
+The proxy protects the Custom Domain `observe.ati-observation-lab.com` and uses the shared token only in its proxy-to-Railway request. Do not expose that token to visitors, source control, logs, error reports, or campaign manifests. The Railway-generated domain remains an origin endpoint and is expected to reject direct observation attempts. Workers.dev intentionally has no trusted per-client identity; only the exact Custom Domain may derive its opaque address scope. Do not add login, CAPTCHA, application forms, a production database, reused production secrets, cookies, or persistence for laboratory sessions.
 
 ## Campaign and evaluation protocol
 

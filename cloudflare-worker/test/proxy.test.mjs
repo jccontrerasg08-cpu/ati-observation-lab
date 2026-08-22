@@ -290,6 +290,54 @@ test("derives the same campaign scope despite client-supplied CF-Connecting-IP",
   );
 });
 
+test("derives a client pseudonym from the edge address only on the protected custom domain", async () => {
+  const { handler, requests } = proxyWithFetch();
+  const marker = "owned-shadow-2026-08-20-a";
+
+  async function forwardClientId(url, address) {
+    const response = await handler(
+      new Request(url, {
+        headers: {
+          "CF-Connecting-IP": address,
+          "X-ATI-Experiment-ID": marker,
+          "X-Forwarded-For": "203.0.113.4",
+        },
+      }),
+      ENV,
+    );
+    assert.equal(response.status, 200);
+    return requests.at(-1).headers.get("X-ATI-Proxy-Client-ID");
+  }
+
+  const protectedFirst = await forwardClientId(
+    "https://observe.ati-observation-lab.com/observe",
+    "198.51.100.7",
+  );
+  const protectedSecond = await forwardClientId(
+    "https://observe.ati-observation-lab.com/observe",
+    "203.0.113.9",
+  );
+  const workersDevFirst = await forwardClientId(
+    "https://ati-observation-proxy.jccontrerasg08.workers.dev/observe",
+    "198.51.100.7",
+  );
+  const workersDevSecond = await forwardClientId(
+    "https://ati-observation-proxy.jccontrerasg08.workers.dev/observe",
+    "203.0.113.9",
+  );
+  const untrustedFirst = await forwardClientId("https://observe.example/observe", "198.51.100.7");
+  const untrustedSecond = await forwardClientId("https://observe.example/observe", "203.0.113.9");
+
+  assert.notEqual(protectedFirst, protectedSecond);
+  assert.equal(workersDevFirst, workersDevSecond);
+  assert.equal(untrustedFirst, untrustedSecond);
+  assert.equal(workersDevFirst, untrustedFirst);
+  for (const forwarded of requests) {
+    assert.equal(forwarded.headers.get("CF-Connecting-IP"), null);
+    assert.equal(forwarded.headers.get("X-Forwarded-For"), null);
+  }
+});
+
 test("binds each lab session to the campaign that issued it", async () => {
   const { handler, requests } = proxyWithFetch();
   const env = {
@@ -320,9 +368,19 @@ test("binds each lab session to the campaign that issued it", async () => {
 });
 
 
+test("documents the custom-domain client pseudonym in the repository privacy contract", async () => {
+  const guide = await readFile(new URL("../../README.md", import.meta.url), "utf8");
+
+  assert.match(guide, /`observe\.ati-observation-lab\.com`/);
+  assert.match(guide, /edge client address/);
+  assert.match(guide, /campaign scope on Workers\.dev/);
+  assert.match(guide, /per-pseudonym limit/);
+});
+
 test("documents Workers.dev campaign scopes instead of IP-derived client identity", async () => {
   const guide = await readFile(new URL("../README.md", import.meta.url), "utf8");
 
   assert.match(guide, /does not derive or claim a visitor identity from IP-address headers/);
+  assert.match(guide, /Only on `observe\.ati-observation-lab\.com`/);
   assert.doesNotMatch(guide, /reads `CF-Connecting-IP`/);
 });
