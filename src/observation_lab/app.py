@@ -42,9 +42,19 @@ _LAB_CONTENT: dict[str, tuple[int, str, str]] = {
     "/lab/page/catalog": (
         200,
         "text/html",
-        '<main><h1>ATI Lab Catalog</h1><a href="/lab/page/detail">Detail</a></main>',
+        '<main><h1>ATI Lab Catalog</h1><a href="/lab/page/detail">Detail</a><a href="/lab/page/related">Related</a></main>',
     ),
-    "/lab/page/detail": (200, "text/html", "<main><h1>ATI Lab Detail</h1></main>"),
+    "/lab/page/detail": (
+        200,
+        "text/html",
+        '<main><h1>ATI Lab Detail</h1><a href="/lab/complete">Complete</a></main>',
+    ),
+    "/lab/page/related": (
+        200,
+        "text/html",
+        '<main><h1>ATI Lab Related</h1><a href="/lab/complete">Complete</a></main>',
+    ),
+    "/lab/complete": (200, "text/html", "<main><h1>ATI Lab Complete</h1></main>"),
     "/lab/assets/site.css": (200, "text/css", "main{max-width:48rem;margin:2rem auto}"),
     "/lab/assets/pixel.svg": (
         200,

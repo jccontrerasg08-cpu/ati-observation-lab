@@ -394,3 +394,45 @@ test("documents Workers.dev campaign scopes instead of IP-derived client identit
   assert.match(guide, /Only on `observe\.ati-observation-lab\.com`/);
   assert.doesNotMatch(guide, /reads `CF-Connecting-IP`/);
 });
+
+
+test("forwards ATI-PF-2 branch and completion paths only with an issued lab session", async () => {
+  const { handler, requests } = proxyWithFetch();
+  const start = await handler(
+    new Request("https://observe.example/lab/start", {
+      headers: { "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a" },
+    }),
+    ENV,
+  );
+  const session = start.headers.get("X-ATI-Lab-Session");
+  assert.match(session, /^ati1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+
+  const related = await handler(
+    new Request("https://observe.example/lab/page/related", {
+      headers: {
+        "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a",
+        "X-ATI-Lab-Session": session,
+      },
+    }),
+    ENV,
+  );
+  const complete = await handler(
+    new Request("https://observe.example/lab/complete", {
+      headers: {
+        "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a",
+        "X-ATI-Lab-Session": session,
+      },
+    }),
+    ENV,
+  );
+
+  assert.equal(related.status, 200);
+  assert.equal(complete.status, 200);
+  assert.equal(requests.length, 3);
+  assert.equal(requests[1].url, "https://ati-observation-lab-production.up.railway.app/lab/page/related");
+  assert.equal(requests[2].url, "https://ati-observation-lab-production.up.railway.app/lab/complete");
+  assert.equal(
+    requests[1].headers.get("X-ATI-Proxy-Session-ID"),
+    requests[2].headers.get("X-ATI-Proxy-Session-ID"),
+  );
+});

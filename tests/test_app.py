@@ -388,3 +388,37 @@ def test_lab_start_accepts_proxy_derived_session_and_logs_only_opaque_value(
     assert record["request_uri"] == "/lab/start"
     assert record["session_id"] == session_id
     assert "X-ATI-Proxy-Session-ID" not in log_path.read_text(encoding="utf-8")
+
+
+def test_pf2_shared_task_graph_allows_branches_and_completion_with_one_opaque_session(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+    session_id = "hmac-sha256:" + "a" * 64
+    headers = {
+        "X-ATI-Proxy-Session-ID": session_id,
+        "X-ATI-Experiment-ID": "owned-general-2026-08-21-playwright",
+    }
+
+    catalog = request(app, "GET", "/lab/page/catalog", headers=headers)
+    related = request(app, "GET", "/lab/page/related", headers=headers)
+    complete = request(app, "GET", "/lab/complete", headers=headers)
+
+    assert catalog.status_code == 200
+    assert 'href="/lab/page/related"' in catalog.text
+    assert related.status_code == 200
+    assert 'href="/lab/complete"' in related.text
+    assert complete.status_code == 200
+    assert "ATI Lab Complete" in complete.text
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert [record["request_uri"] for record in records] == [
+        "/lab/page/catalog",
+        "/lab/page/related",
+        "/lab/complete",
+    ]
+    assert {record["session_id"] for record in records} == {session_id}
+    serialized = log_path.read_text(encoding="utf-8")
+    assert "X-ATI-Proxy-Session-ID" not in serialized
+    assert "cookie" not in serialized.lower()
