@@ -443,3 +443,26 @@ test("forwards ATI-PF-2 branch and completion paths only with an issued lab sess
     requests[2].headers.get("X-ATI-Proxy-Session-ID"),
   );
 });
+
+
+test("forwards coarse User-Agent provenance without the raw header", async () => {
+  const { handler, requests } = proxyWithFetch();
+
+  const response = await handler(
+    new Request("https://observe.example/observe", {
+      headers: {
+        "User-Agent": "curl/8.0.1 ControlledAuditValue/9.9",
+        "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a",
+      },
+    }),
+    ENV,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].headers.get("User-Agent"), null);
+  assert.equal(
+    requests[0].headers.get("X-ATI-UA-Provenance-Bucket"),
+    "scripted-http",
+  );
+});

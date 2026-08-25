@@ -4,9 +4,9 @@ This directory contains the minimal Cloudflare Worker that forms the trusted edg
 
 ## Request contract
 
-The Worker accepts only `GET` and `HEAD`, with no query string or fragment. It rejects `Cookie`, `Authorization`, and `Proxy-Authorization` before forwarding. The closed route catalogue is `/observe`, `/lab/start`, `/lab/page/landing`, `/lab/page/catalog`, `/lab/page/detail`, `/lab/assets/site.css`, `/lab/assets/pixel.svg`, and `/lab/missing`.
+The Worker accepts only `GET` and `HEAD`, with no query string or fragment. It rejects `Cookie`, `Authorization`, and `Proxy-Authorization` before forwarding. The closed route catalogue is `/observe`, `/lab/start`, `/lab/page/landing`, `/lab/page/catalog`, `/lab/page/detail`, `/lab/page/related`, `/lab/complete`, `/lab/assets/site.css`, `/lab/assets/pixel.svg`, and `/lab/missing`.
 
-`/observe` supports isolated observations. The `/lab/*` protocol supports controlled multi-step navigation without cookies. A request to `/lab/start` creates a signed, opaque, 15-minute session token in `X-ATI-Lab-Session`; the client presents that token only for later `/lab/*` requests. The Worker validates it and forwards only the HMAC-derived `X-ATI-Proxy-Session-ID` to Railway. It never forwards the raw session token, cookies, visitor IP, query string, credentials, body, or arbitrary client headers.
+`/observe` supports isolated observations. The `/lab/*` protocol supports controlled multi-step navigation without cookies. A request to `/lab/start` creates a signed, opaque, 15-minute session token in `X-ATI-Lab-Session`; the client presents that token only for later `/lab/*` requests. The Worker validates it and forwards only the HMAC-derived `X-ATI-Proxy-Session-ID` to Railway. It derives and forwards one fixed `X-ATI-UA-Provenance-Bucket` value (`absent`, `scripted-http`, `browser-like`, or `other`) but never forwards raw User-Agent text. It never forwards the raw session token, cookies, visitor IP, query string, credentials, body, or arbitrary client headers.
 
 On `workers.dev` and every hostname other than `observe.ati-observation-lab.com`, the Worker does not derive or claim a visitor identity from IP-address headers. It derives an HMAC-SHA-256 campaign scope from the allowlisted marker using a private secret and discards all visitor-address headers before sending the request to Railway.
 

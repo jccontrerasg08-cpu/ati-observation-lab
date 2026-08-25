@@ -13,6 +13,7 @@ from observation_lab.app import create_app
 _TRUSTED_PROXY_HEADERS = {
     "X-ATI-Proxy-Token": "test-origin-token",
     "X-ATI-Proxy-Client-ID": "hmac-sha256:" + "a" * 64,
+    "X-ATI-UA-Provenance-Bucket": "absent",
 }
 
 
@@ -59,6 +60,7 @@ def test_observe_writes_coarse_user_agent_provenance_without_raw_value(
         "/observe",
         headers={
             "User-Agent": "curl/8.0.1 ControlledAgent/1.0",
+            "X-ATI-UA-Provenance-Bucket": "scripted-http",
             "X-ATI-Experiment-ID": "owned-shadow-2026-08-19-a",
             "Authorization": "Bearer never-log-this",
             "Cookie": "session=do-not-log",
@@ -422,3 +424,42 @@ def test_pf2_shared_task_graph_allows_branches_and_completion_with_one_opaque_se
     serialized = log_path.read_text(encoding="utf-8")
     assert "X-ATI-Proxy-Session-ID" not in serialized
     assert "cookie" not in serialized.lower()
+
+
+def test_observe_uses_edge_user_agent_bucket_without_reading_raw_user_agent(
+    tmp_path, monkeypatch
+) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+
+    response = request(
+        app,
+        "GET",
+        "/observe",
+        headers={
+            "User-Agent": "UntrustedRawAgent/9.9",
+            "X-ATI-UA-Provenance-Bucket": "scripted-http",
+        },
+    )
+
+    assert response.status_code == 200
+    record = json.loads(log_path.read_text(encoding="utf-8"))
+    assert record["ua_provenance_bucket"] == "scripted-http"
+    assert "UntrustedRawAgent/9.9" not in log_path.read_text(encoding="utf-8")
+
+
+def test_observe_rejects_an_invalid_edge_user_agent_bucket(tmp_path, monkeypatch) -> None:
+    log_path = tmp_path / "access.jsonl"
+    configure_observation(monkeypatch, log_path)
+    app = create_app()
+
+    response = request(
+        app,
+        "GET",
+        "/observe",
+        headers={"X-ATI-UA-Provenance-Bucket": "untrusted-value"},
+    )
+
+    assert response.status_code == 403
+    assert not log_path.exists()

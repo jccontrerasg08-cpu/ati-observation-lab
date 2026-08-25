@@ -17,6 +17,16 @@ const LAB_PATHS = new Set([
 ]);
 const SESSION_TTL_SECONDS = 15 * 60;
 const TRUSTED_CUSTOM_DOMAIN = "observe.ati-observation-lab.com";
+const SCRIPTED_USER_AGENT_MARKERS = [
+  "aiohttp",
+  "curl",
+  "go-http-client",
+  "httpx",
+  "node-fetch",
+  "python-requests",
+  "undici",
+  "wget",
+];
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -29,6 +39,20 @@ function reject(status) {
 
 function allowedCampaignIds(value) {
   return new Set(value.split(",").map((item) => item.trim()).filter(Boolean));
+}
+
+function uaProvenanceBucket(value) {
+  const normalized = value.toLowerCase();
+  if (!normalized) {
+    return "absent";
+  }
+  if (SCRIPTED_USER_AGENT_MARKERS.some((marker) => normalized.includes(marker))) {
+    return "scripted-http";
+  }
+  if (["mozilla/", "chrome/", "edg/", "firefox/", "safari/"].some((marker) => normalized.includes(marker))) {
+    return "browser-like";
+  }
+  return "other";
 }
 
 function base64UrlEncode(bytes) {
@@ -218,7 +242,10 @@ export function createProxyHandler(fetchFn = fetch) {
         env.ATI_CLIENT_PSEUDONYM_KEY,
       ),
     );
-    headers.set("User-Agent", request.headers.get("User-Agent")?.slice(0, 512) ?? "");
+    headers.set(
+      "X-ATI-UA-Provenance-Bucket",
+      uaProvenanceBucket(request.headers.get("User-Agent") ?? ""),
+    );
     if (proxySessionId) {
       headers.set("X-ATI-Proxy-Session-ID", proxySessionId);
     }
