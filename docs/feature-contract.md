@@ -22,7 +22,7 @@ No model, baseline, calibration stage, threshold policy, or monitoring job may i
 
 ## Audit-only User-Agent provenance
 
-The origin may derive one of four coarse provenance categories in memory: `absent`, `scripted-http`, `browser-like`, or `other`. It must discard the raw User-Agent immediately. `ua_provenance_bucket` is retained solely for aggregate corpus-composition reporting and is prohibited from feature construction, filtering, preprocessing, feature selection, calibration, threshold selection, model evaluation, drift scoring, and any analyst decision intended to improve a score.
+The trusted Worker may derive one of four coarse provenance categories in memory: `absent`, `scripted-http`, `browser-like`, or `other`. It discards the raw User-Agent before the request reaches Railway; the origin accepts only the fixed category from the authenticated Worker. `ua_provenance_bucket` is retained solely for aggregate corpus-composition reporting and is prohibited from feature construction, filtering, preprocessing, feature selection, calibration, threshold selection, model evaluation, drift scoring, and any analyst decision intended to improve a score.
 
 ## Prohibited fields and proxies
 

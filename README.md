@@ -15,10 +15,10 @@ The laboratory serves only `GET` and `HEAD` observation traffic. For every accep
 | `client_id` | Keyed BLAKE2b pseudonym of the opaque scope generated at the trusted edge. It is derived from the campaign scope on Workers.dev and all other hosts; at `observe.ati-observation-lab.com` it is a second-layer pseudonym of the edge address scope. It never contains a raw address or direct client identifier. |
 | `session_id` | Optional edge-derived HMAC for a single `/lab/*` navigation session; it is absent for isolated `/observe`. |
 | `request_method`, `request_uri`, `status`, `body_bytes_sent` | Request metadata; the URI is always path-only and belongs to the closed route catalogue. |
-| `server_protocol`, `http_user_agent` | Protocol and truncated User-Agent. |
+| `server_protocol`, `ua_provenance_bucket` | Protocol plus one edge-derived coarse User-Agent provenance category: `absent`, `scripted-http`, `browser-like`, or `other`. The Worker never forwards raw User-Agent text to Railway. This audit-only category is excluded from every model workflow. |
 | `ati_campaign_id` | Optional controlled marker only when `X-ATI-Experiment-ID` matches the strict opaque-marker format. |
 
-It never writes raw IP addresses, raw session tokens, query strings, cookies, `Authorization`, request bodies, arbitrary headers, proxy tokens, or invalid campaign markers. Health checks and rejected methods are not logged. The Railway start command also disables Uvicorn access logs, because their default request lines can include full query strings.
+It never writes raw IP addresses, raw session tokens, query strings, cookies, `Authorization`, request bodies, arbitrary headers, raw User-Agent text, proxy tokens, or invalid campaign markers. Health checks and rejected methods are not logged. The Railway start command also disables Uvicorn access logs, because their default request lines can include full query strings.
 
 > On `workers.dev`, the edge pseudonyms support campaign-wide rate limiting and grouped evaluation only. At `observe.ati-observation-lab.com`, the address-derived edge pseudonym can support a campaign-approved per-pseudonym limit, but it is still not a label or an assertion of identity, device, network, or intent. A campaign marker proves only that a request belongs to an authorized experiment.
 
@@ -28,7 +28,8 @@ It never writes raw IP addresses, raw session tokens, query strings, cookies, `A
 |---|---|---|
 | `/observe` | GET, HEAD | Isolated observation retained for compatibility. |
 | `/lab/start` | GET, HEAD | Starts a signed, 15-minute, cookie-free session. The Worker returns its opaque token only in `X-ATI-Lab-Session`. |
-| `/lab/page/landing`, `/lab/page/catalog`, `/lab/page/detail` | GET, HEAD | Static HTML pages with local links for a controlled sequence. |
+| `/lab/page/landing`, `/lab/page/catalog` | GET, HEAD | Shared static pages for each controlled task. |
+| `/lab/page/detail`, `/lab/page/related`, `/lab/complete` | GET, HEAD | Two task branches and their shared completion page. |
 | `/lab/assets/site.css`, `/lab/assets/pixel.svg` | GET, HEAD | Static local assets with no external dependencies. |
 | `/lab/missing` | GET, HEAD | Deterministic controlled `404`. |
 
