@@ -9,6 +9,8 @@ const LAB_PATHS = new Set([
   "/lab/page/landing",
   "/lab/page/catalog",
   "/lab/page/detail",
+  "/lab/page/related",
+  "/lab/complete",
   "/lab/assets/site.css",
   "/lab/assets/pixel.svg",
   "/lab/missing",
