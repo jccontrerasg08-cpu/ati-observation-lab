@@ -1,6 +1,8 @@
-# Custom-Domain Observation Campaign Matrix
+# Historical Custom-Domain Observation Campaign Matrix (pre-ATI-PF-2)
 
-**Status:** Approved controlled plan; traffic begins only after the reviewed configuration is deployed and the acceptance checks below pass.
+> **Historical record — not a current collection plan.** This document preserves the pre-ATI-PF-2 six-step protocol-integrity scenario. New controlled collection must follow the [ATI-PF-2 shared task graph](ati-pf2-shared-task-graph.md); this legacy sequence must not be used to establish a model corpus or train a detector.
+
+**Historical status:** Approved controlled plan; traffic begins only after the reviewed configuration is deployed and the acceptance checks below pass.
 
 ## Purpose and scope
 
