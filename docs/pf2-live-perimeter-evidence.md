@@ -11,6 +11,11 @@ examples by the feature contract and are not part of any corpus.
 
 ## Perimeter conformance: 22 of 22 as specified
 
+These checks are now a maintained command, `ati-lab-perimeter` (`make perimeter`), rather
+than a one-off script. Its route-by-route catalogue check replaces the single controlled
+`404` probe below, so every `/lab/*` route is compared against the shared catalogue on
+each run.
+
 | Check | Expected | Observed |
 |---|---|---|
 | `/lab/start` with no marker | `403` | `403` |
@@ -154,8 +159,8 @@ the executor instead of the behavior. The procedure now follows the shared task 
 with the branch chosen by the participant.
 
 The approved local executor the procedure assumed now exists as
-[`scripts/lab_session.py`](../scripts/lab_session.py), and
-[`scripts/build_pf2_corpus.py`](../scripts/build_pf2_corpus.py) reconciles its records
+`ati-lab-session` (`src/observation_lab/pf2/executor.py`), and `ati-lab-corpus`
+(`src/observation_lab/pf2/corpus.py`) reconciles its records
 against an export. The whole chain — reconcile, preflight, baseline, warehouse export —
 was verified end to end on a clearly-labeled two-class fixture.
 

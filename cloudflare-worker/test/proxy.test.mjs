@@ -73,6 +73,12 @@ test("declares only the approved custom-domain campaign markers", async () => {
       "owned-domain-2026-08-25-pf2-node-fetch",
       "owned-domain-2026-08-25-pf2-playwright-chromium",
       "owned-domain-2026-08-25-pf2-human-consented",
+      // One executor for both cohorts, so the marker names the cohort, not a client.
+      "owned-domain-2026-09-26-pf2-matched-automated",
+      "owned-domain-2026-09-26-pf2-matched-human-consented",
+      // Two markers let the live checker prove sessions are campaign-bound.
+      "owned-domain-2026-09-26-perimeter-a",
+      "owned-domain-2026-09-26-perimeter-b",
     ].join(","),
     ATI_ORIGIN_URL: "https://ati-observation-lab-production.up.railway.app",
   });
@@ -519,4 +525,42 @@ test("does not reclassify a browser agent that merely contains a runtime word", 
     ),
     "browser-like",
   );
+});
+
+test("admits exactly the routes in the shared closed catalogue", async () => {
+  // The catalogue is the single source of truth shared with the origin, the executor
+  // and ATI. A route the Worker admits but the catalogue lacks, or the reverse, fails.
+  const catalogue = JSON.parse(
+    await readFile(
+      new URL("../../src/observation_lab/pf2/catalogue.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const env = { ...ENV, ATI_ALLOWED_CAMPAIGN_IDS: "owned-shadow-2026-08-20-a" };
+  const marker = { "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a" };
+
+  for (const { path } of catalogue.routes) {
+    const { handler, requests } = proxyWithFetch();
+    const response = await handler(
+      new Request(`https://observe.example${path}`, { headers: marker }),
+      env,
+    );
+    if (path === "/lab/start") {
+      assert.equal(response.status, 200, path);
+      assert.equal(requests.length, 1, path);
+    } else {
+      // Admitted by the catalogue gate, then refused only for lacking a signed session.
+      assert.equal(response.status, 403, path);
+      assert.equal(requests.length, 0, path);
+    }
+  }
+
+  for (const path of ["/lab/not-a-route", "/lab/page/admin", "/lab/assets/other.css"]) {
+    const { handler } = proxyWithFetch();
+    const response = await handler(
+      new Request(`https://observe.example${path}`, { headers: marker }),
+      env,
+    );
+    assert.equal(response.status, 400, path);
+  }
 });

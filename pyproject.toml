@@ -15,6 +15,11 @@ dependencies = [
   "uvicorn>=0.30,<1",
 ]
 
+[project.scripts]
+ati-lab-session = "observation_lab.pf2.executor:main"
+ati-lab-corpus = "observation_lab.pf2.corpus:main"
+ati-lab-perimeter = "observation_lab.pf2.perimeter:main"
+
 [project.optional-dependencies]
 dev = [
   "httpx>=0.27,<1",
@@ -22,6 +27,9 @@ dev = [
   "ruff>=0.8,<1",
   "setuptools>=68",
 ]
+
+[tool.setuptools.package-data]
+observation_lab = ["pf2/catalogue.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
