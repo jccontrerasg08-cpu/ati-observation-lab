@@ -128,6 +128,37 @@ delay bins. A flat inter-request delay chosen to satisfy the limiter would inste
 collapsed the coarse tempo features to a single bin, quietly removing a permitted feature
 family from the corpus.
 
+## Fixes applied after this run
+
+Two defects the run exposed were corrected rather than only recorded.
+
+**The coarse provenance bucket understated scripted traffic.** Node's global `fetch` sends
+exactly `node` as its User-Agent. The Worker's marker list carried `node-fetch` and
+`undici` but not the bare token, so a declared executor family was bucketed `other`
+throughout this run. `ua_provenance_bucket` is audit-only and excluded from every model
+workflow, so no model was affected — but corpus-composition reporting, the one thing the
+field exists for, was wrong. The Worker now matches bare runtime tokens on token
+boundaries, so `node` is `scripted-http` while a browser agent containing a longer word
+such as `NodeWebkit` stays `browser-like`. `python-urllib` was added to the substring
+markers for the same reason.
+
+**The consent procedure's route plan could not produce a usable corpus.** The plan
+predated ATI-PF-2: it ended at `/lab/missing` and never reached `/lab/complete`. That is
+unusable for two independent reasons. `/lab/missing` is not an eligible ATI-PF-2 route, so
+`ati pf2-preflight` rejects any session containing it outright — verified against the
+implementation. And because every automated family terminates at `/lab/complete` while
+that plan never did, the completion flag and route-category counts would have separated
+the cohorts perfectly, which is exactly the class proxy the feature contract forbids.
+Running the old plan would have yielded either a rejected corpus or a model that learned
+the executor instead of the behavior. The procedure now follows the shared task graph,
+with the branch chosen by the participant.
+
+The approved local executor the procedure assumed now exists as
+[`scripts/lab_session.py`](../scripts/lab_session.py), and
+[`scripts/build_pf2_corpus.py`](../scripts/build_pf2_corpus.py) reconciles its records
+against an export. The whole chain — reconcile, preflight, baseline, warehouse export —
+was verified end to end on a clearly-labeled two-class fixture.
+
 ## Still pending, and pending on a person
 
 A two-class ATI-PF-2 corpus requires the consented human cohort defined in

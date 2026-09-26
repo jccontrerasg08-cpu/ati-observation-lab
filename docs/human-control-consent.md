@@ -23,16 +23,18 @@ The operator must confirm all items before the participant begins:
 
 | Check | Required outcome |
 |---|---|
-| Marker | `owned-domain-2026-08-22-human-consented` is deployed and only used after affirmative consent |
+| Marker | `owned-domain-2026-08-25-pf2-human-consented` is deployed and only used after affirmative consent |
 | Endpoint | Custom Domain resolves with valid HTTPS; direct Railway origin remains unavailable |
 | Protocol | Participant receives the closed route sequence and a way to send only the approved marker and signed session header |
 | Local capture | The executor records only `X-ATI-Request-ID`, method, closed path, expected status, scenario version, and a local session sequence number |
 | Exclusions | No response or local record contains the signed session token, raw address, cookie, query, authorization value, body, full User-Agent, or arbitrary header |
+| Executor reachability | The executor reaches the Worker rather than an edge denial. The managed browser-integrity rule answers `403` (error `1010`) for the Python standard library's default User-Agent, so a client that trips it is silently absent from the corpus instead of failing visibly. Run `scripts/lab_session.py` and let its reachability check pass before the participant starts |
+| Header reading | The executor reads response headers case-insensitively. The Worker keeps its own casing on `X-ATI-Lab-Session` while the origin's `X-ATI-Request-ID` arrives lowercased, so a case-sensitive read loses the correlation identifier with no error |
 | Stop condition | Operator agrees that any unexpected data field, status, or route stops the control and excludes its incomplete session |
 
 ## Closed route sequence
 
-The participant uses an ordinary browser and the same logical sequence as the automation families. They must send the approved human marker on every request and preserve the short-lived signed session header only for the later `/lab/*` requests. The route plan is:
+The participant follows the **ATI-PF-2 shared task graph**, the same route plan available to every automated family. They must send the approved human marker on every request and preserve the short-lived signed session header only for the later `/lab/*` requests.
 
 | Order | Method | Path | Expected status |
 |---:|---|---|---:|
@@ -40,10 +42,33 @@ The participant uses an ordinary browser and the same logical sequence as the au
 | 2 | GET | `/lab/page/landing` | 200 |
 | 3 | GET | `/lab/assets/site.css` | 200 |
 | 4 | GET | `/lab/page/catalog` | 200 |
-| 5 | HEAD | `/lab/page/detail` | 200, no response body required |
-| 6 | GET | `/lab/missing` | 404 |
+| 5 | GET | `/lab/assets/pixel.svg` | 200 |
+| 6 | GET | `/lab/page/detail` **or** `/lab/page/related` | 200 |
+| 7 | GET | `/lab/complete` | 200 |
 
-A standard browser navigation cannot automatically replay a custom response session header on the next request. The operator must therefore use an approved local executor or browser-tool procedure that can set the marker and transient session header without placing it in a URL or cookie. The signed header is never written to the label file, shared with third parties, or pasted into this document.
+The participant chooses the branch at step 6, exactly as the task menu is available to the automated cohort.
+
+> **This replaces the earlier six-request sequence, which ended at `/lab/missing`.** That
+> plan cannot be used for an ATI-PF-2 corpus for two independent reasons. `/lab/missing`
+> is not an eligible ATI-PF-2 route, so `ati pf2-preflight` rejects any session containing
+> it outright. And because every automated family terminates at `/lab/complete` while that
+> plan never reached it, the completion flag and the route-category counts would have
+> separated the cohorts perfectly — a route category present in only one target class,
+> which the feature contract forbids. Running the old plan would have produced either a
+> rejected corpus or a model that learned the executor instead of the behavior.
+
+A standard browser navigation cannot automatically replay a custom response session header on the next request. The operator must therefore use the approved local executor, `scripts/lab_session.py`, which carries only the marker and the transient session header, defers every request to the participant in `interactive` mode, and records only the fields listed below. The signed header is never written to the label file, shared with third parties, or pasted into this document.
+
+```bash
+python scripts/lab_session.py \
+  --marker owned-domain-2026-08-25-pf2-human-consented \
+  --task task-detail \
+  --pacing-variant H1 \
+  --mode interactive \
+  --output ./local/human-session-01.json
+```
+
+In `interactive` mode the executor waits for the participant before each request, so pacing and branch choice come from the person. The executor declares its own User-Agent; it is neither a browser nor a known scripted client, so the edge records its coarse provenance as `other`. That category is audit-only and excluded from every model workflow, so it neither helps nor harms the corpus — but do not disguise the executor as a browser to change it.
 
 ## Pacing variants
 
@@ -59,7 +84,7 @@ Do not record the exact delay vector in the corpus. The operator may keep a loca
 
 ## Completion, labeling, and withdrawal
 
-For each accepted response, record the returned opaque `X-ATI-Request-ID` locally with `controlled_automation=false`, `condition=human_consented`, scenario version, pacing variant code, method, closed path, and status. The human control is valid only if all six IDs match one exported JSONL record apiece and the expected status sequence occurs.
+For each accepted response, record the returned opaque `X-ATI-Request-ID` locally with `controlled_automation=false`, `condition=human_consented`, scenario version, pacing variant code, method, closed path, and status. The human control is valid only if **every** request identifier in the plan matches one exported JSONL record apiece and the expected status sequence occurs; a session with a missing or duplicated identifier is excluded rather than repaired. `scripts/lab_session.py` writes exactly these fields and marks the session `excluded` with a reason when any step deviates.
 
 The participant may ask the operator to withdraw their session before it is aggregated or used. In that case, the operator deletes the associated local labels and exported JSONL rows using opaque request IDs, verifies the deletion, and records only an aggregate withdrawal count. The participant does not need to explain the request.
 

@@ -24,9 +24,14 @@ const SCRIPTED_USER_AGENT_MARKERS = [
   "httpx",
   "node-fetch",
   "python-requests",
+  "python-urllib",
   "undici",
   "wget",
 ];
+// Runtimes whose default User-Agent is a bare token rather than a name/version pair:
+// Node's global fetch sends exactly "node". Matched on token boundaries so a longer
+// word inside a browser User-Agent is never reclassified as a scripted client.
+const SCRIPTED_USER_AGENT_TOKENS = new Set(["node"]);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -47,6 +52,9 @@ function uaProvenanceBucket(value) {
     return "absent";
   }
   if (SCRIPTED_USER_AGENT_MARKERS.some((marker) => normalized.includes(marker))) {
+    return "scripted-http";
+  }
+  if (normalized.split(/[^a-z0-9]+/).some((token) => SCRIPTED_USER_AGENT_TOKENS.has(token))) {
     return "scripted-http";
   }
   if (["mozilla/", "chrome/", "edg/", "firefox/", "safari/"].some((marker) => normalized.includes(marker))) {

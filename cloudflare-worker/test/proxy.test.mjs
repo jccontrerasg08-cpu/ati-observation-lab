@@ -466,3 +466,57 @@ test("forwards coarse User-Agent provenance without the raw header", async () =>
     "scripted-http",
   );
 });
+
+async function provenanceFor(userAgent) {
+  const { handler, requests } = proxyWithFetch();
+  const headers = { "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a" };
+  if (userAgent !== null) {
+    headers["User-Agent"] = userAgent;
+  }
+  const response = await handler(
+    new Request("https://observe.example/observe", { headers }),
+    ENV,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(requests[0].headers.get("User-Agent"), null);
+  return requests[0].headers.get("X-ATI-UA-Provenance-Bucket");
+}
+
+test("buckets the declared scripted runtimes whose default agent is a bare token", async () => {
+  // Node's global fetch sends exactly "node", which previously fell through to "other"
+  // and understated scripted traffic in corpus-composition reporting.
+  assert.equal(await provenanceFor("node"), "scripted-http");
+  assert.equal(await provenanceFor("Node"), "scripted-http");
+  assert.equal(await provenanceFor("node/22.22.2"), "scripted-http");
+});
+
+test("buckets the Python standard-library client as a scripted runtime", async () => {
+  assert.equal(await provenanceFor("Python-urllib/3.11"), "scripted-http");
+});
+
+test("keeps every other declared executor family in its existing bucket", async () => {
+  assert.equal(await provenanceFor("curl/8.5.0"), "scripted-http");
+  assert.equal(await provenanceFor("Wget/1.21.4"), "scripted-http");
+  assert.equal(await provenanceFor("python-requests/2.34.2"), "scripted-http");
+  assert.equal(await provenanceFor("python-httpx/0.28.1"), "scripted-http");
+  assert.equal(await provenanceFor("undici"), "scripted-http");
+  assert.equal(
+    await provenanceFor(
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36",
+    ),
+    "browser-like",
+  );
+  assert.equal(await provenanceFor("weird-client/1.0"), "other");
+  assert.equal(await provenanceFor(""), "absent");
+  assert.equal(await provenanceFor(null), "absent");
+});
+
+test("does not reclassify a browser agent that merely contains a runtime word", async () => {
+  // A token-boundary match keeps "NodeWebkit" from being read as the "node" runtime.
+  assert.equal(
+    await provenanceFor(
+      "Mozilla/5.0 (X11; Linux x86_64) NodeWebkit/1.0 Chrome/90.0.0.0 Safari/537.36",
+    ),
+    "browser-like",
+  );
+});

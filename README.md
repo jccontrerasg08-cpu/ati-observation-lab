@@ -82,4 +82,41 @@ The approved Custom Domain matrix, opaque markers, session sequence, acceptance 
 
 The existing controlled-observation guide in `agent-traffic-intelligence` remains the source of truth for manifests and `ati run` invocation. Do not describe a pilot or conformance run as evidence of model generalization.
 
+## Running one ATI-PF-2 collection end to end
+
+Four steps, each of which fails closed rather than guessing. Nothing leaves your machine
+except the controlled requests themselves.
+
+```bash
+# 1. Run one session. Repeat per session, family and collection window.
+#    The reachability check refuses to start if the edge would block this executor.
+python scripts/lab_session.py \
+  --marker owned-domain-2026-08-25-pf2-human-consented \
+  --task task-detail --pacing-variant H1 --mode interactive \
+  --collection-window 2026-09-26-block-1 \
+  --output ./local/sessions/human-01.json
+
+# 2. Export the privacy-safe rows from the origin's captured output into one JSONL
+#    (Railway dashboard or CLI). Keep it outside Git.
+
+# 3. Reconcile local records against the export by opaque request identifier.
+python scripts/build_pf2_corpus.py \
+  --session-dir ./local/sessions --exported ./local/exported.jsonl \
+  --output-dir ./local/corpus
+
+# 4. Hand the four local inputs to ATI.
+ati pf2-preflight ./local/corpus/access.jsonl \
+  --labels-by-session ./local/corpus/labels-by-session.json \
+  --tasks-by-session ./local/corpus/tasks-by-session.json \
+  --collection-windows-by-session ./local/corpus/collection-windows.json \
+  --model-output model.jsonl --split-output splits.jsonl \
+  --preflight-output preflight.json
+ati pf2-baseline model.jsonl --split-manifest splits.jsonl --output baseline.json \
+  --target-false-positive-rate 0.05
+```
+
+Step 3 reports `both_classes_present`. When it is `false` the preflight will refuse the
+corpus, which is the intended behaviour: a corpus of only automated families has no target
+contrast, and browser-driven automation is never a human control.
+
 The deployed perimeter and one multi-family collection run are recorded in [the live perimeter evidence](docs/pf2-live-perimeter-evidence.md), including four prerequisites a future collection must satisfy: verify every declared executor family reaches the Worker, group only on `session_id`, read response headers case-insensitively, and burst within a session rather than flattening inter-request delays to satisfy the rate limit.
