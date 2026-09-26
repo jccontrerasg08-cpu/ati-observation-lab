@@ -40,3 +40,14 @@ No raw IP address, IP prefix, geolocation, full User-Agent, `ua_provenance_bucke
 ## Evaluation gate
 
 A baseline is permitted only after the preflight reports both target classes, shared task coverage, the predeclared minimum sessions for every task×class cell, at least one varying permitted feature, and a separate session-level split manifest. These gates establish collection readiness—not generalization, population FPR, calibration or an operational threshold.
+
+Once those gates pass, `ati pf2-baseline` runs the ladder: a constant-prevalence classifier first, then one L2-regularized logistic regression over the permitted families only, across a forward-chained temporal holdout, a leave-one-task-out holdout and a grouped-session holdout. Standardization, coefficients and the operating threshold come from each split's training partition, and each metric carries a session-cluster resampling interval. A split missing a class on either side is reported without metrics rather than scored.
+
+## Collection prerequisites verified in deployment
+
+The live perimeter and collection run recorded in [`pf2-live-perimeter-evidence.md`](pf2-live-perimeter-evidence.md) adds four prerequisites that a future collection must satisfy before it can be considered valid for fitting:
+
+1. Confirm every declared executor family actually reaches the Worker. Cloudflare's managed browser-integrity rule answers `403` with error `1010` for the Python standard-library client's default User-Agent, so such a family would be silently absent from the corpus instead of failing visibly.
+2. Group only on `session_id`. The address-derived `client_id` changed within single sessions of the run and is not a stable group key from a multi-address collecting host.
+3. Read response headers case-insensitively in the executor. The origin's request-correlation header reaches clients lowercased, and a case-sensitive read loses it without error.
+4. Burst within a session and idle between sessions. A flat inter-request delay chosen to satisfy the 30-per-minute per-pseudonym limit collapses the coarse tempo features to one bin, removing a permitted feature family from the corpus.

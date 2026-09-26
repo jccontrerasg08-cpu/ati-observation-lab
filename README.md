@@ -81,3 +81,5 @@ The approved Custom Domain matrix, opaque markers, session sequence, acceptance 
 6. Stop after the approved window, redact exports, and follow the manifest’s retention and verified-deletion procedure.
 
 The existing controlled-observation guide in `agent-traffic-intelligence` remains the source of truth for manifests and `ati run` invocation. Do not describe a pilot or conformance run as evidence of model generalization.
+
+The deployed perimeter and one multi-family collection run are recorded in [the live perimeter evidence](docs/pf2-live-perimeter-evidence.md), including four prerequisites a future collection must satisfy: verify every declared executor family reaches the Worker, group only on `session_id`, read response headers case-insensitively, and burst within a session rather than flattening inter-request delays to satisfy the rate limit.
