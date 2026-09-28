@@ -539,6 +539,18 @@ test("admits exactly the routes in the shared closed catalogue", async () => {
   const env = { ...ENV, ATI_ALLOWED_CAMPAIGN_IDS: "owned-shadow-2026-08-20-a" };
   const marker = { "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a" };
 
+  // The allowlist itself must equal the catalogue: exercising routes alone cannot
+  // notice an extra entry the Worker would silently admit.
+  const source = await readFile(new URL("../src/index.mjs", import.meta.url), "utf8");
+  const block = source.match(/const LAB_PATHS = new Set\(\[([\s\S]*?)\]\);/);
+  assert.ok(block, "LAB_PATHS literal not found in the Worker");
+  const allowlist = [...block[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(allowlist).size, allowlist.length, "LAB_PATHS repeats a route");
+  assert.deepEqual(
+    [...allowlist].sort(),
+    catalogue.routes.map(({ path }) => path).sort(),
+  );
+
   for (const { path } of catalogue.routes) {
     const { handler, requests } = proxyWithFetch();
     const response = await handler(

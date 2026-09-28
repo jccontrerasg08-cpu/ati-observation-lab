@@ -255,6 +255,103 @@ def test_an_ineligible_route_excludes_the_session(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("request_uri", "/lab/page/related"),
+        ("request_method", "HEAD"),
+        ("status", 404),
+    ],
+)
+def test_a_joined_row_that_disagrees_with_the_local_request_excludes_the_session(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    # Every value here is individually valid; only the pairing is wrong.
+    rows = [exported_row(0, step) for step in range(len(PLAN))]
+    rows[3][field] = value
+
+    _, result = built(tmp_path, [record(0, automated=True)], rows)
+
+    summary = result["summary"]
+    assert summary["reconciled_sessions"] == 0
+    assert summary["excluded_sessions"][0]["reason"] == (
+        "joined row disagrees with the local request"
+    )
+
+
+def test_a_local_request_with_an_unexpected_status_excludes_the_session(
+    tmp_path: Path,
+) -> None:
+    payload = record(0, automated=True)
+    payload["requests"][2]["status"] = 403
+    rows = [exported_row(0, step) for step in range(len(PLAN))]
+    rows[2]["status"] = 403
+
+    _, result = built(tmp_path, [payload], rows)
+
+    assert result["summary"]["excluded_sessions"][0]["reason"] == (
+        "local request did not receive its expected status"
+    )
+
+
+@pytest.mark.parametrize(
+    "dimension", ["pacing_variant", "executor", "scenario_version", "catalogue_version"]
+)
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_a_missing_audit_dimension_fails_closed(
+    tmp_path: Path, dimension: str, value: object
+) -> None:
+    # Defaulting it would make both classes share one invented value and hide a confound.
+    payload = record(0, automated=True)
+    if value is None:
+        del payload[dimension]
+    else:
+        payload[dimension] = value
+    session_dir, _ = write_case(tmp_path, [payload])
+
+    with pytest.raises(CorpusError, match=f"must record '{dimension}'"):
+        load_session_records(sorted(session_dir.glob("*.json")))
+
+
+def test_a_request_entry_that_is_not_an_object_fails_closed(tmp_path: Path) -> None:
+    payload = record(0, automated=True)
+    payload["requests"].append("not-a-request")
+    session_dir, _ = write_case(tmp_path, [payload])
+
+    with pytest.raises(CorpusError, match="list of request objects"):
+        load_session_records(sorted(session_dir.glob("*.json")))
+
+
+@pytest.mark.parametrize("line", ["[1, 2]", '"text"', "7", "null"])
+def test_a_non_object_export_line_fails_closed(tmp_path: Path, line: str) -> None:
+    export = tmp_path / "exported.jsonl"
+    export.write_text(json.dumps(exported_row(0, 0)) + "\n" + line + "\n", encoding="utf-8")
+
+    with pytest.raises(CorpusError, match="line 2 is not a JSON object"):
+        load_exported_rows(export)
+
+
+def test_cli_reports_a_non_object_export_line_without_a_traceback(
+    tmp_path: Path, capsys
+) -> None:
+    session_dir, export = write_case(tmp_path, matched_design())
+    export.write_text("[]\n", encoding="utf-8")
+
+    code = main(
+        [
+            "--session-dir",
+            str(session_dir),
+            "--exported",
+            str(export),
+            "--output-dir",
+            str(tmp_path / "corpus"),
+        ]
+    )
+
+    assert code == 2
+    assert "is not a JSON object" in capsys.readouterr().err
+
+
 def test_duplicate_request_identifier_in_the_export_fails_closed(tmp_path: Path) -> None:
     export = tmp_path / "exported.jsonl"
     row = json.dumps(exported_row(0, 0))

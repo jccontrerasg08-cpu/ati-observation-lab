@@ -7,8 +7,9 @@ identifiers and writes the four local inputs `ati pf2-preflight` reads.
 It fails a session closed rather than repairing it: a session is excluded when the
 executor already excluded it, when any of its identifiers is missing from the export,
 when one identifier matches more than one row, when its rows span more than one session
-pseudonym, or when a row is not an ATI-PF-2-eligible route. Exclusions are counted, never
-silently dropped.
+pseudonym, when a row is not an ATI-PF-2-eligible route, or when a joined row disagrees
+with the local request it claims to be on path, method or status. Exclusions are counted,
+never silently dropped.
 
 It also checks what `ati pf2-preflight` cannot see. Pacing variant, executor, scenario
 version and catalogue version are local audit metadata that never reach ATI, so only this
@@ -66,9 +67,19 @@ def load_session_records(paths: list[Path]) -> list[dict[str, Any]]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise CorpusError(f"{path.name} does not contain one session record object")
-        for name in ("task", "pacing_variant", "collection_window", "requests"):
+        for name in ("task", "collection_window", "requests"):
             if name not in payload:
                 raise CorpusError(f"{path.name} is missing the {name!r} field")
+        # A missing audit dimension would otherwise read as one shared value and hide
+        # exactly the class confound this step exists to catch.
+        for name in _SHARED_AUDIT_DIMENSIONS:
+            value = payload.get(name)
+            if not isinstance(value, str) or not value.strip():
+                raise CorpusError(f"{path.name} must record {name!r} as a non-empty string")
+        if not isinstance(payload["requests"], list) or not all(
+            isinstance(entry, dict) for entry in payload["requests"]
+        ):
+            raise CorpusError(f"{path.name} requests must be a list of request objects")
         if "controlled_automation" not in payload:
             raise CorpusError(f"{path.name} is missing the controlled_automation label")
         payload["_label"] = _label(payload, path.name)
@@ -93,6 +104,8 @@ def load_exported_rows(path: Path) -> dict[str, dict[str, Any]]:
                 row = json.loads(line)
             except json.JSONDecodeError as error:
                 raise CorpusError(f"invalid JSON in export at line {number}") from error
+            if not isinstance(row, dict):
+                raise CorpusError(f"export line {number} is not a JSON object")
             request_id = row.get("request_id")
             if not isinstance(request_id, str) or not _REQUEST_ID.fullmatch(request_id):
                 raise CorpusError(f"invalid opaque request id in export at line {number}")
@@ -116,11 +129,7 @@ def load_exported_rows(path: Path) -> dict[str, dict[str, Any]]:
 def _exclusion(record: dict[str, Any], exported: dict[str, dict[str, Any]]) -> str | None:
     if record.get("excluded"):
         return str(record.get("exclusion_reason") or "excluded by the executor")
-    request_ids = [
-        str(entry.get("request_id", ""))
-        for entry in record["requests"]
-        if isinstance(entry, dict)
-    ]
+    request_ids = [str(entry.get("request_id", "")) for entry in record["requests"]]
     if not request_ids or not all(_REQUEST_ID.fullmatch(value) for value in request_ids):
         return "invalid local request identifier"
     if len(set(request_ids)) != len(request_ids):
@@ -132,6 +141,15 @@ def _exclusion(record: dict[str, Any], exported: dict[str, dict[str, Any]]) -> s
         return "rows span more than one session"
     if any(str(row["request_uri"]) not in PF2_ROUTE_CATEGORIES for row in rows):
         return "row is not an ATI-PF-2-eligible route"
+    for entry, row in zip(record["requests"], rows, strict=True):
+        if str(entry.get("status")) != str(entry.get("expected_status")):
+            return "local request did not receive its expected status"
+        if (
+            entry.get("path") != row["request_uri"]
+            or entry.get("method") != row["request_method"]
+            or str(entry.get("status")) != str(row["status"])
+        ):
+            return "joined row disagrees with the local request"
     return None
 
 
@@ -142,7 +160,7 @@ def confounded_dimensions(accepted: list[dict[str, Any]]) -> dict[str, list[str]
     for dimension in _SHARED_AUDIT_DIMENSIONS:
         classes: dict[str, set[bool]] = defaultdict(set)
         for record in accepted:
-            classes[str(record.get(dimension, "unrecorded"))].add(bool(record["_label"]))
+            classes[str(record[dimension])].add(bool(record["_label"]))
         single = sorted(value for value, labels in classes.items() if len(labels) == 1)
         if single:
             confounded[dimension] = single
@@ -164,11 +182,7 @@ def build(
 
     for record in records:
         source = str(record["_source"])
-        request_ids = [
-            str(entry.get("request_id", ""))
-            for entry in record["requests"]
-            if isinstance(entry, dict)
-        ]
+        request_ids = [str(entry.get("request_id", "")) for entry in record["requests"]]
         unmatched += sum(value not in exported for value in request_ids)
         reason = _exclusion(record, exported)
         if reason is not None:
