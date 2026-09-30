@@ -1,0 +1,25 @@
+{
+  "version": "ati-pf2-catalogue-1",
+  "routes": [
+    {"path": "/lab/start", "status": 200, "pf2_category": "start"},
+    {"path": "/lab/page/landing", "status": 200, "pf2_category": "landing"},
+    {"path": "/lab/page/catalog", "status": 200, "pf2_category": "catalog"},
+    {"path": "/lab/page/detail", "status": 200, "pf2_category": "detail"},
+    {"path": "/lab/page/related", "status": 200, "pf2_category": "related"},
+    {"path": "/lab/complete", "status": 200, "pf2_category": "complete"},
+    {"path": "/lab/assets/site.css", "status": 200, "pf2_category": "asset"},
+    {"path": "/lab/assets/pixel.svg", "status": 200, "pf2_category": "asset"},
+    {"path": "/lab/missing", "status": 404, "pf2_category": null}
+  ],
+  "task_branches": {
+    "task-detail": "/lab/page/detail",
+    "task-related": "/lab/page/related"
+  },
+  "pacing_variants": {
+    "burst": [0.2, 0.6],
+    "H1": [5, 12],
+    "H2": [12, 25],
+    "H3": [25, 45]
+  },
+  "human_pacing_variants": ["H1", "H2", "H3"]
+}

@@ -8,3 +8,5 @@ access.jsonl
 labels.jsonl
 runs/
 .env
+build/
+dist/

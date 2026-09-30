@@ -81,3 +81,82 @@ The approved Custom Domain matrix, opaque markers, session sequence, acceptance 
 6. Stop after the approved window, redact exports, and follow the manifest’s retention and verified-deletion procedure.
 
 The existing controlled-observation guide in `agent-traffic-intelligence` remains the source of truth for manifests and `ati run` invocation. Do not describe a pilot or conformance run as evidence of model generalization.
+
+## Running an ATI-PF-2 collection end to end
+
+`pip install -e .` installs three commands. Each fails closed rather than guessing, and
+nothing leaves your machine except the controlled requests themselves.
+
+| Command | Purpose |
+|---|---|
+| `ati-lab-session` | Runs one session through the edge. The same executor serves both cohorts. |
+| `ati-lab-corpus` | Reconciles session records with an origin export into ATI's preflight inputs. |
+| `ati-lab-perimeter` | Live conformance checks against production. Opt-in, never in CI. |
+
+### Matched-executor design
+
+A fitting corpus runs **both cohorts through `ati-lab-session`**, with the same route plan,
+the same task menu and the same pacing regimes. The executor, its User-Agent, its header
+handling and every regime are then shared by both classes, so the only thing left to
+differ is who decides when each request happens — the behavior being measured. The
+cohort is the label and the pacing variant is the regime; they are independent inputs.
+
+```bash
+# 1. One session per invocation. Assign tasks, regimes and windows so that every value
+#    appears in both cohorts. The human cohort requires a consent record first and always
+#    runs interactively; the automated cohort follows the same H regimes on a timer.
+ati-lab-session --cohort automated \
+  --marker owned-domain-2026-09-26-pf2-matched-automated \
+  --task task-detail --pacing-variant H2 --collection-window 2026-09-27-block-1 \
+  --output ./local/sessions/automated-001.json
+
+ati-lab-session --cohort human-consented \
+  --marker owned-domain-2026-09-26-pf2-matched-human-consented \
+  --task task-detail --pacing-variant H2 --collection-window 2026-09-27-block-1 \
+  --output ./local/sessions/human-001.json
+
+# 2. Export the privacy-safe rows from the origin's captured output into one JSONL
+#    (Railway dashboard or CLI). Keep it outside Git.
+
+# 3. Reconcile by opaque request identifier. This refuses a corpus that is not
+#    fitting-ready and writes nothing; --diagnostic writes it anyway for inspection.
+ati-lab-corpus --session-dir ./local/sessions --exported ./local/exported.jsonl \
+  --output-dir ./local/corpus
+
+# 4. Hand the four local inputs to ATI.
+ati pf2-preflight ./local/corpus/access.jsonl \
+  --labels-by-session ./local/corpus/labels-by-session.json \
+  --tasks-by-session ./local/corpus/tasks-by-session.json \
+  --collection-windows-by-session ./local/corpus/collection-windows.json \
+  --model-output model.jsonl --split-output splits.jsonl \
+  --preflight-output preflight.json
+ati pf2-baseline model.jsonl --split-manifest splits.jsonl --output baseline.json \
+  --target-false-positive-rate 0.05
+```
+
+`ati-lab-corpus` checks what ATI cannot see. Pacing variant, executor, scenario version
+and catalogue version never reach ATI, so only this step can detect that one of them
+occurs in a single target class — which makes a corpus invalid for fitting because that
+value alone would separate the classes. The `burst` regime is therefore for diagnostics
+and perimeter work only: a consented participant cannot follow it.
+
+### One closed catalogue
+
+[`src/observation_lab/pf2/catalogue.json`](src/observation_lab/pf2/catalogue.json) is the
+single source of truth for the `/lab/*` routes, their statuses, their ATI-PF-2 categories,
+the task branches and the pacing regimes. Tests hold the origin application, the Worker,
+the executor and the corpus builder to it, and `agent-traffic-intelligence` pins the same
+category mapping and version. A route changes there, with every consumer, in one review.
+
+### Checks
+
+```bash
+make check       # lint, Python tests, Worker tests — exactly what CI runs
+make perimeter   # live conformance against production; run after every deploy
+```
+
+The deployed perimeter and one multi-family collection run are recorded in
+[the live perimeter evidence](docs/pf2-live-perimeter-evidence.md), including why the
+executor must be verified as reachable before each campaign, why grouping keys only on
+`session_id`, and why response headers are read case-insensitively.
+

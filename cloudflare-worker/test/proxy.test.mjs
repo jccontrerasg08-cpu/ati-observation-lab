@@ -73,6 +73,12 @@ test("declares only the approved custom-domain campaign markers", async () => {
       "owned-domain-2026-08-25-pf2-node-fetch",
       "owned-domain-2026-08-25-pf2-playwright-chromium",
       "owned-domain-2026-08-25-pf2-human-consented",
+      // One executor for both cohorts, so the marker names the cohort, not a client.
+      "owned-domain-2026-09-26-pf2-matched-automated",
+      "owned-domain-2026-09-26-pf2-matched-human-consented",
+      // Two markers let the live checker prove sessions are campaign-bound.
+      "owned-domain-2026-09-26-perimeter-a",
+      "owned-domain-2026-09-26-perimeter-b",
     ].join(","),
     ATI_ORIGIN_URL: "https://ati-observation-lab-production.up.railway.app",
   });
@@ -465,4 +471,108 @@ test("forwards coarse User-Agent provenance without the raw header", async () =>
     requests[0].headers.get("X-ATI-UA-Provenance-Bucket"),
     "scripted-http",
   );
+});
+
+async function provenanceFor(userAgent) {
+  const { handler, requests } = proxyWithFetch();
+  const headers = { "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a" };
+  if (userAgent !== null) {
+    headers["User-Agent"] = userAgent;
+  }
+  const response = await handler(
+    new Request("https://observe.example/observe", { headers }),
+    ENV,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(requests[0].headers.get("User-Agent"), null);
+  return requests[0].headers.get("X-ATI-UA-Provenance-Bucket");
+}
+
+test("buckets the declared scripted runtimes whose default agent is a bare token", async () => {
+  // Node's global fetch sends exactly "node", which previously fell through to "other"
+  // and understated scripted traffic in corpus-composition reporting.
+  assert.equal(await provenanceFor("node"), "scripted-http");
+  assert.equal(await provenanceFor("Node"), "scripted-http");
+  assert.equal(await provenanceFor("node/22.22.2"), "scripted-http");
+});
+
+test("buckets the Python standard-library client as a scripted runtime", async () => {
+  assert.equal(await provenanceFor("Python-urllib/3.11"), "scripted-http");
+});
+
+test("keeps every other declared executor family in its existing bucket", async () => {
+  assert.equal(await provenanceFor("curl/8.5.0"), "scripted-http");
+  assert.equal(await provenanceFor("Wget/1.21.4"), "scripted-http");
+  assert.equal(await provenanceFor("python-requests/2.34.2"), "scripted-http");
+  assert.equal(await provenanceFor("python-httpx/0.28.1"), "scripted-http");
+  assert.equal(await provenanceFor("undici"), "scripted-http");
+  assert.equal(
+    await provenanceFor(
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36",
+    ),
+    "browser-like",
+  );
+  assert.equal(await provenanceFor("weird-client/1.0"), "other");
+  assert.equal(await provenanceFor(""), "absent");
+  assert.equal(await provenanceFor(null), "absent");
+});
+
+test("does not reclassify a browser agent that merely contains a runtime word", async () => {
+  // A token-boundary match keeps "NodeWebkit" from being read as the "node" runtime.
+  assert.equal(
+    await provenanceFor(
+      "Mozilla/5.0 (X11; Linux x86_64) NodeWebkit/1.0 Chrome/90.0.0.0 Safari/537.36",
+    ),
+    "browser-like",
+  );
+});
+
+test("admits exactly the routes in the shared closed catalogue", async () => {
+  // The catalogue is the single source of truth shared with the origin, the executor
+  // and ATI. A route the Worker admits but the catalogue lacks, or the reverse, fails.
+  const catalogue = JSON.parse(
+    await readFile(
+      new URL("../../src/observation_lab/pf2/catalogue.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const env = { ...ENV, ATI_ALLOWED_CAMPAIGN_IDS: "owned-shadow-2026-08-20-a" };
+  const marker = { "X-ATI-Experiment-ID": "owned-shadow-2026-08-20-a" };
+
+  // The allowlist itself must equal the catalogue: exercising routes alone cannot
+  // notice an extra entry the Worker would silently admit.
+  const source = await readFile(new URL("../src/index.mjs", import.meta.url), "utf8");
+  const block = source.match(/const LAB_PATHS = new Set\(\[([\s\S]*?)\]\);/);
+  assert.ok(block, "LAB_PATHS literal not found in the Worker");
+  const allowlist = [...block[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(allowlist).size, allowlist.length, "LAB_PATHS repeats a route");
+  assert.deepEqual(
+    [...allowlist].sort(),
+    catalogue.routes.map(({ path }) => path).sort(),
+  );
+
+  for (const { path } of catalogue.routes) {
+    const { handler, requests } = proxyWithFetch();
+    const response = await handler(
+      new Request(`https://observe.example${path}`, { headers: marker }),
+      env,
+    );
+    if (path === "/lab/start") {
+      assert.equal(response.status, 200, path);
+      assert.equal(requests.length, 1, path);
+    } else {
+      // Admitted by the catalogue gate, then refused only for lacking a signed session.
+      assert.equal(response.status, 403, path);
+      assert.equal(requests.length, 0, path);
+    }
+  }
+
+  for (const path of ["/lab/not-a-route", "/lab/page/admin", "/lab/assets/other.css"]) {
+    const { handler } = proxyWithFetch();
+    const response = await handler(
+      new Request(`https://observe.example${path}`, { headers: marker }),
+      env,
+    );
+    assert.equal(response.status, 400, path);
+  }
 });
