@@ -1,5 +1,22 @@
 # ATI Observation Lab
 
+[![CI](https://github.com/jccontrerasg08-cpu/ati-observation-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/jccontrerasg08-cpu/ati-observation-lab/actions/workflows/ci.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![Edge: Cloudflare Workers](https://img.shields.io/badge/edge-Cloudflare%20Workers-orange)
+![Origin: FastAPI on Railway](https://img.shields.io/badge/origin-FastAPI%20on%20Railway-purple)
+
+## At a glance
+
+| | |
+|---|---|
+| **What** | A deliberately small website, visited only under controlled, labelled conditions, that produces privacy-safe ground truth for [Agent Traffic Intelligence](https://github.com/jccontrerasg08-cpu/agent-traffic-intelligence). |
+| **How** | A Cloudflare Worker gates a closed route catalogue, issues HMAC-signed campaign-bound sessions and forwards only opaque pseudonyms; the FastAPI origin refuses anything the Worker did not vouch for and logs pseudonymized JSONL. |
+| **Tooling** | `ati-lab-session` runs one labelled session, `ati-lab-corpus` turns sessions and an origin export into a corpus (refusing class-confounded ones), `ati-lab-perimeter` checks production after each deploy. |
+| **Evidence** | 22/22 live perimeter checks; 110 Python and 23 Worker tests; one route catalogue held equal across Worker, origin, executor and ATI by tests. |
+| **Read next** | [Decision records](docs/README.md#decisions) · [Documentation map](docs/README.md) · [Case study](https://github.com/jccontrerasg08-cpu/agent-traffic-intelligence/blob/main/docs/case-study.md) |
+
+## What this repository is
+
 This repository is a **separate, privacy-first FastAPI laboratory** for controlled AI traffic campaigns. It is intentionally not a production site and has no database, account system, form handling, background job, analytics SDK, persistent volume, or cookie-based session handling.
 
 ## Trust boundary and recorded data
