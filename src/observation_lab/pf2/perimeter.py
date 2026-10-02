@@ -67,6 +67,38 @@ class Check:
         return self.expected == self.observed
 
 
+@dataclass(frozen=True, slots=True)
+class _Probe:
+    """Sends one request to the edge, or to the origin when `to_origin` is set."""
+
+    transport: Transport
+    host: str
+    origin: str
+
+    def get(
+        self,
+        path: str,
+        headers: dict[str, str] | None = None,
+        *,
+        method: str = "GET",
+        to_origin: bool = False,
+        body: bytes | None = None,
+    ) -> Response:
+        base = self.origin if to_origin else self.host
+        return self.transport(method, f"{base}{path}", headers or {}, body)
+
+    def status(
+        self,
+        path: str,
+        headers: dict[str, str] | None = None,
+        *,
+        method: str = "GET",
+        to_origin: bool = False,
+        body: bytes | None = None,
+    ) -> int:
+        return self.get(path, headers, method=method, to_origin=to_origin, body=body)[0]
+
+
 def run_checks(
     *,
     transport: Transport,
@@ -75,149 +107,162 @@ def run_checks(
     host: str = DEFAULT_HOST,
     origin: str = DEFAULT_ORIGIN,
 ) -> list[Check]:
-    """Run every conformance probe and return one result per check."""
+    """Run every conformance probe and return one result per check, in a fixed order."""
 
-    checks: list[Check] = []
-
-    def get(
-        path: str,
-        headers: dict[str, str] | None = None,
-        *,
-        method: str = "GET",
-        base: str = host,
-        body: bytes | None = None,
-    ) -> Response:
-        return transport(method, f"{base}{path}", headers or {}, body)
-
-    def status(
-        path: str,
-        headers: dict[str, str] | None = None,
-        *,
-        method: str = "GET",
-        base: str = host,
-        body: bytes | None = None,
-    ) -> int:
-        return get(path, headers, method=method, base=base, body=body)[0]
-
-    def add(name: str, expected: object, observed: object) -> None:
-        checks.append(Check(name, expected, observed))
-
+    probe = _Probe(transport, host, origin)
     marked = {"X-ATI-Experiment-ID": marker}
-    add("lab-start-without-marker", 403, status("/lab/start"))
-    add(
-        "lab-start-unknown-marker",
-        403,
-        status("/lab/start", {"X-ATI-Experiment-ID": "not-an-allowlisted-marker"}),
-    )
-    add(
-        "lab-start-malformed-marker",
-        403,
-        status("/lab/start", {"X-ATI-Experiment-ID": "bad marker with spaces"}),
-    )
-    add("route-outside-catalogue", 400, status("/lab/not-a-route", marked))
-    add("healthz-not-proxied", 400, status("/healthz"))
-    add("query-string-refused", 400, status("/lab/start?x=1", marked))
-    add("cookie-refused", 400, status("/lab/start", {**marked, "Cookie": "a=b"}))
-    add(
-        "authorization-refused",
-        400,
-        status("/lab/start", {**marked, "Authorization": "Bearer synthetic"}),
-    )
-    add("post-refused", 400, status("/lab/start", marked, method="POST", body=b""))
+    # Probe order is part of the contract: each group runs only after the previous one.
+    checks = _edge_refusal_checks(probe, marked)
+    binding_checks, session = _session_binding_checks(probe, marked, other_marker)
+    checks += binding_checks
+    checks += _response_contract_checks(probe, session)
+    checks += _origin_isolation_checks(probe)
+    checks.append(_edge_reachability_check(probe))
+    return checks
 
-    start_status, start_headers, _ = get("/lab/start", marked)
+
+def _edge_refusal_checks(probe: _Probe, marked: dict[str, str]) -> list[Check]:
+    """The Worker refuses anything outside the closed, marker-gated contract."""
+
+    return [
+        Check("lab-start-without-marker", 403, probe.status("/lab/start")),
+        Check(
+            "lab-start-unknown-marker",
+            403,
+            probe.status("/lab/start", {"X-ATI-Experiment-ID": "not-an-allowlisted-marker"}),
+        ),
+        Check(
+            "lab-start-malformed-marker",
+            403,
+            probe.status("/lab/start", {"X-ATI-Experiment-ID": "bad marker with spaces"}),
+        ),
+        Check("route-outside-catalogue", 400, probe.status("/lab/not-a-route", marked)),
+        Check("healthz-not-proxied", 400, probe.status("/healthz")),
+        Check("query-string-refused", 400, probe.status("/lab/start?x=1", marked)),
+        Check("cookie-refused", 400, probe.status("/lab/start", {**marked, "Cookie": "a=b"})),
+        Check(
+            "authorization-refused",
+            400,
+            probe.status("/lab/start", {**marked, "Authorization": "Bearer synthetic"}),
+        ),
+        Check("post-refused", 400, probe.status("/lab/start", marked, method="POST", body=b"")),
+    ]
+
+
+def _session_binding_checks(
+    probe: _Probe, marked: dict[str, str], other_marker: str
+) -> tuple[list[Check], dict[str, str]]:
+    """A signed session is issued once, bound to one campaign, and cannot be forged."""
+
+    start_status, start_headers, _ = probe.get("/lab/start", marked)
     token = start_headers.get("x-ati-lab-session", "")
     first_id = start_headers.get("x-ati-request-id", "")
-    add(
-        "lab-start-issues-session",
-        (200, True, True),
-        (
-            start_status,
-            token.startswith("ati1.") and token.count(".") == 2,
-            bool(first_id),
-        ),
-    )
     session = {**marked, "X-ATI-Lab-Session": token}
-    add("continuation-without-session", 403, status("/lab/page/landing", marked))
     tampered = token[:-4] + ("aaaa" if not token.endswith("aaaa") else "bbbb")
-    add(
-        "tampered-session-refused",
-        403,
-        status("/lab/page/landing", {**marked, "X-ATI-Lab-Session": tampered}),
-    )
-    add(
-        "cross-campaign-session-refused",
-        403,
-        status(
-            "/lab/page/landing",
-            {"X-ATI-Experiment-ID": other_marker, "X-ATI-Lab-Session": token},
+    checks = [
+        Check(
+            "lab-start-issues-session",
+            (200, True, True),
+            (start_status, token.startswith("ati1.") and token.count(".") == 2, bool(first_id)),
         ),
-    )
-    continued_status, continued_headers, _ = get("/lab/page/landing", session)
+        Check("continuation-without-session", 403, probe.status("/lab/page/landing", marked)),
+        Check(
+            "tampered-session-refused",
+            403,
+            probe.status("/lab/page/landing", {**marked, "X-ATI-Lab-Session": tampered}),
+        ),
+        Check(
+            "cross-campaign-session-refused",
+            403,
+            probe.status(
+                "/lab/page/landing",
+                {"X-ATI-Experiment-ID": other_marker, "X-ATI-Lab-Session": token},
+            ),
+        ),
+    ]
+    continued_status, continued_headers, _ = probe.get("/lab/page/landing", session)
     continued_id = continued_headers.get("x-ati-request-id", "")
-    add(
-        "bound-session-continues",
-        (200, True, True),
-        (continued_status, bool(continued_id), continued_id != first_id),
-    )
-    add("lab-start-rejects-existing-session", 403, status("/lab/start", session))
-
-    get_status, get_headers, get_body = get("/lab/page/catalog", session)
-    head_status, head_headers, head_body = get("/lab/page/catalog", session, method="HEAD")
-    add(
-        "head-matches-get-without-body",
-        (get_status, get_headers.get("content-type"), 0, True),
-        (head_status, head_headers.get("content-type"), len(head_body), bool(get_body)),
-    )
-    _, landing_headers, _ = get("/lab/page/landing", session)
-    add(
-        "no-store-and-no-cookie",
-        ("no-store", False),
-        (landing_headers.get("cache-control"), "set-cookie" in landing_headers),
-    )
-    served = {path: status(path, session) for path in ROUTE_STATUS if path != "/lab/start"}
-    add(
-        "every-catalogue-route-served-as-declared",
-        {path: code for path, code in ROUTE_STATUS.items() if path != "/lab/start"},
-        served,
-    )
-
-    direct_status, _, direct_body = get("/lab/start", base=origin)
-    add(
-        "origin-refuses-direct-observation",
-        (503, True),
-        (direct_status, b"observation unavailable" in direct_body),
-    )
-    health_status, _, health_body = get("/healthz", base=origin)
-    add("origin-healthz-available", (200, True), (health_status, b'"ok"' in health_body))
-    add(
-        "origin-refuses-forged-proxy-context",
-        503,
-        status(
-            "/lab/start",
-            {
-                "X-ATI-Proxy-Client-ID": "hmac-sha256:" + "0" * 64,
-                "X-ATI-UA-Provenance-Bucket": "scripted-http",
-                "X-ATI-Proxy-Session-ID": "hmac-sha256:" + "0" * 64,
-            },
-            base=origin,
+    checks += [
+        Check(
+            "bound-session-continues",
+            (200, True, True),
+            (continued_status, bool(continued_id), continued_id != first_id),
         ),
-    )
+        Check("lab-start-rejects-existing-session", 403, probe.status("/lab/start", session)),
+    ]
+    return checks, session
 
-    stdlib_status, _, stdlib_body = get("/healthz", {"User-Agent": _STDLIB_USER_AGENT})
+
+def _response_contract_checks(probe: _Probe, session: dict[str, str]) -> list[Check]:
+    """Responses are uncacheable, cookieless, HEAD-consistent and match the catalogue."""
+
+    get_status, get_headers, get_body = probe.get("/lab/page/catalog", session)
+    head_status, head_headers, head_body = probe.get(
+        "/lab/page/catalog", session, method="HEAD"
+    )
+    _, landing_headers, _ = probe.get("/lab/page/landing", session)
+    declared = {path: code for path, code in ROUTE_STATUS.items() if path != "/lab/start"}
+    return [
+        Check(
+            "head-matches-get-without-body",
+            (get_status, get_headers.get("content-type"), 0, True),
+            (head_status, head_headers.get("content-type"), len(head_body), bool(get_body)),
+        ),
+        Check(
+            "no-store-and-no-cookie",
+            ("no-store", False),
+            (landing_headers.get("cache-control"), "set-cookie" in landing_headers),
+        ),
+        Check(
+            "every-catalogue-route-served-as-declared",
+            declared,
+            {path: probe.status(path, session) for path in declared},
+        ),
+    ]
+
+
+def _origin_isolation_checks(probe: _Probe) -> list[Check]:
+    """The origin observes only traffic the Worker vouches for."""
+
+    direct_status, _, direct_body = probe.get("/lab/start", to_origin=True)
+    health_status, _, health_body = probe.get("/healthz", to_origin=True)
+    forged_context = {
+        "X-ATI-Proxy-Client-ID": "hmac-sha256:" + "0" * 64,
+        "X-ATI-UA-Provenance-Bucket": "scripted-http",
+        "X-ATI-Proxy-Session-ID": "hmac-sha256:" + "0" * 64,
+    }
+    return [
+        Check(
+            "origin-refuses-direct-observation",
+            (503, True),
+            (direct_status, b"observation unavailable" in direct_body),
+        ),
+        Check(
+            "origin-healthz-available",
+            (200, True),
+            (health_status, b'"ok"' in health_body),
+        ),
+        Check(
+            "origin-refuses-forged-proxy-context",
+            503,
+            probe.status("/lab/start", forged_context, to_origin=True),
+        ),
+    ]
+
+
+def _edge_reachability_check(probe: _Probe) -> Check:
+    """Every declared executor family reaches the Worker; only the stdlib UA is banned."""
+
+    stdlib_status, _, stdlib_body = probe.get("/healthz", {"User-Agent": _STDLIB_USER_AGENT})
     reachable = {
-        family: status("/healthz", {"User-Agent": agent})
+        family: probe.status("/healthz", {"User-Agent": agent})
         for family, agent in _FAMILY_USER_AGENTS.items()
     }
-    add(
+    return Check(
         "edge-reachability-by-executor-family",
         {"stdlib-denied-by-edge": True, **dict.fromkeys(_FAMILY_USER_AGENTS, 400)},
-        {
-            "stdlib-denied-by-edge": stdlib_status == 403 and b"1010" in stdlib_body,
-            **reachable,
-        },
+        {"stdlib-denied-by-edge": stdlib_status == 403 and b"1010" in stdlib_body, **reachable},
     )
-    return checks
 
 
 def main(argv: list[str] | None = None) -> int:
