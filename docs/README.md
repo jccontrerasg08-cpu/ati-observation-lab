@@ -21,7 +21,7 @@
 | [ATI-PF-2 shared task graph](ati-pf2-shared-task-graph.md) | Tasks, branches and pacing regimes both cohorts follow. |
 | [Feature contract](feature-contract.md) | What may and may not become a model feature. |
 | [Human control consent](human-control-consent.md) | How a consented participant joins the human cohort. |
-| [Corpus datasheet](custom-domain-corpus-datasheet.md) | Provenance, labelling, retention and known biases of the corpus. |
+| [ATI-PF-2 corpus datasheet](pf2-corpus-datasheet.md) | Motivation, composition, collection, labelling, uses, distribution and maintenance of the corpus, after *Datasheets for Datasets*. |
 | [Cookie variant boundary](cookie-experiment-boundary.md) | Why cookie sessions stay a research variant. |
 
 ## Evidence
@@ -32,5 +32,6 @@
 
 ## History
 
-- [Custom-domain campaign matrix](custom-domain-campaign-matrix.md): the pre-ATI-PF-2
-  campaign plan, kept for traceability.
+- [Custom-domain campaign matrix](custom-domain-campaign-matrix.md) and
+  [corpus datasheet](custom-domain-corpus-datasheet.md): the pre-ATI-PF-2 campaign plan and
+  the datasheet that governed it, kept for traceability.
