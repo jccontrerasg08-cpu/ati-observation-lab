@@ -167,7 +167,7 @@ was verified end to end on a clearly-labeled two-class fixture.
 ## Still pending, and pending on a person
 
 A two-class ATI-PF-2 corpus requires the consented human cohort defined in
-[`human-control-consent.md`](human-control-consent.md), using the
-`owned-domain-2026-08-25-pf2-human-consented` marker, an affirmative consent record, and
-a declared pacing variant. Additional automated collection cannot substitute for it, and
+[`human-control-consent.md`](human-control-consent.md), run through the matched executor
+with the `owned-domain-2026-09-26-pf2-matched-human-consented` marker, an affirmative
+consent record, and a declared pacing variant. Additional automated collection cannot substitute for it, and
 browser-driven automation must never be labeled as a human control.

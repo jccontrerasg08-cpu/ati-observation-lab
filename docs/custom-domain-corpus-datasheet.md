@@ -1,5 +1,8 @@
 # Custom-Domain Controlled Observation Corpus — Datasheet
 
+> **Historical.** This datasheet governs the pre-ATI-PF-2 six-request integrity scenario. The
+> corpus that ATI-PF-2 fits on is described in the [ATI-PF-2 corpus datasheet](pf2-corpus-datasheet.md).
+
 **Corpus ID:** `custom-domain-2026-08-22`  
 **Status:** Controlled collection in progress; this file is the governing specification, not a claim that the target sample count has been reached.  
 **Data controller:** Laboratory operator.  
