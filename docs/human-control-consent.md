@@ -63,12 +63,15 @@ The automated cohort runs through the **same** executor, with the same route pla
 
 ```bash
 ati-lab-session --cohort human-consented \
+  --participant p01 \
   --marker owned-domain-2026-09-26-pf2-matched-human-consented \
   --task task-detail \
   --pacing-variant H1 \
   --collection-window 2026-09-27-block-1 \
   --output ./local/sessions/human-01.json
 ```
+
+`--participant` takes an opaque code the operator assigns, such as `p01`; it is never the person's name, initials or any other identifier, and the mapping from code to person is not recorded anywhere in the corpus. The code lets evaluation keep each person's sessions on one side of every split, so a model is never scored on someone it was trained on. Use the same code for all of one person's sessions, and recruit at least two participants: a cohort with one cannot be held out and still trained on.
 
 For the human cohort the executor waits for the participant before each request, so pacing comes from the person; the declared variant is shown to them as guidance only, and no delay is recorded. A consented participant may only be assigned H1, H2 or H3. The executor declares its own User-Agent; it is neither a browser nor a known scripted client, so the edge records its coarse provenance as `other`. That category is audit-only and excluded from every model workflow, so it neither helps nor harms the corpus — but do not disguise the executor as a browser to change it.
 

@@ -127,7 +127,7 @@ ati-lab-session --cohort automated \
   --task task-detail --pacing-variant H2 --collection-window 2026-09-27-block-1 \
   --output ./local/sessions/automated-001.json
 
-ati-lab-session --cohort human-consented \
+ati-lab-session --cohort human-consented --participant p01 \
   --marker owned-domain-2026-09-26-pf2-matched-human-consented \
   --task task-detail --pacing-variant H2 --collection-window 2026-09-27-block-1 \
   --output ./local/sessions/human-001.json
@@ -140,11 +140,12 @@ ati-lab-session --cohort human-consented \
 ati-lab-corpus --session-dir ./local/sessions --exported ./local/exported.jsonl \
   --output-dir ./local/corpus
 
-# 4. Hand the four local inputs to ATI.
+# 4. Hand the local inputs to ATI.
 ati pf2-preflight ./local/corpus/access.jsonl \
   --labels-by-session ./local/corpus/labels-by-session.json \
   --tasks-by-session ./local/corpus/tasks-by-session.json \
   --collection-windows-by-session ./local/corpus/collection-windows.json \
+  --groups-by-session ./local/corpus/groups-by-session.json \
   --model-output model.jsonl --split-output splits.jsonl \
   --preflight-output preflight.json
 ati pf2-baseline model.jsonl --split-manifest splits.jsonl --output baseline.json \
@@ -156,6 +157,12 @@ and catalogue version never reach ATI, so only this step can detect that one of 
 occurs in a single target class — which makes a corpus invalid for fitting because that
 value alone would separate the classes. The `burst` regime is therefore for diagnostics
 and perimeter work only: a consented participant cannot follow it.
+
+Each consented session also carries an operator-assigned participant code such as `p01`,
+never a name. The corpus builder writes it to `groups-by-session.json`, and ATI keeps every
+participant's sessions on one side of every split. Otherwise a model could be scored on
+recognizing a person it was trained on. A consented cohort with an uncoded session, or
+with fewer than two participants, is refused for fitting.
 
 ### One closed catalogue
 

@@ -29,7 +29,7 @@ A future collection is invalid for model fitting when a task, scenario, route ca
 
 ## Permitted model aggregates
 
-The companion ATI preflight derives only fixed-vocabulary session aggregates: route-category counts, category-transition counts, GET/HEAD count, 2xx/4xx counts, completion, duplicate category count, four predeclared delay-bin counts and a four-level duration bucket. Exact timestamps are used only in memory to derive bins and are discarded before the model table is emitted.
+The companion ATI preflight derives only fixed-vocabulary session aggregates: route-category counts, category-transition counts, GET/HEAD count, 2xx/4xx counts, completion, duplicate category count, four predeclared delay-bin counts, a four-level duration bucket, and two four-level tempo-shape buckets (how irregular the pauses are, independently of their length). Exact timestamps are used only in memory to derive bins and are discarded before the model table is emitted.
 
 The preflight emits two separate local artifacts: a model table with target plus allowed aggregates, and a split manifest with opaque session pseudonym and audit-only task label. The split manifest must never be supplied to an estimator.
 

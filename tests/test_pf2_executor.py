@@ -68,6 +68,8 @@ def run(edge: FakeEdge | None = None, **overrides: object) -> SessionRecord:
         "rng": random.Random(0),
     }
     options.update(overrides)
+    if options["cohort"] == "human-consented":
+        options.setdefault("participant", "p01")
     return run_session(**options)  # type: ignore[arg-type]
 
 
@@ -152,6 +154,7 @@ def test_record_holds_only_approved_audit_fields_and_no_delay() -> None:
         "task",
         "pacing_variant",
         "collection_window",
+        "participant",
         "executor",
         "scenario_version",
         "catalogue_version",
@@ -241,3 +244,19 @@ def test_reachability_check_rejects_an_unexpected_status() -> None:
 def test_executor_declares_a_user_agent_the_edge_does_not_ban() -> None:
     assert "urllib" not in EXECUTOR_ID.lower()
     assert "python" not in EXECUTOR_ID.lower()
+
+
+def test_a_consented_session_records_its_participant_code() -> None:
+    assert run(cohort="human-consented", participant="p07").to_dict()["participant"] == "p07"
+    assert run(cohort="automated").to_dict()["participant"] is None
+
+
+@pytest.mark.parametrize("code", [None, "", "alice", "P01", "p1", "p01 ", "p12345"])
+def test_a_consented_session_needs_an_opaque_participant_code(code: str | None) -> None:
+    with pytest.raises(LabSessionError, match="opaque participant code"):
+        run(cohort="human-consented", participant=code)
+
+
+def test_an_automated_session_never_carries_a_participant_code() -> None:
+    with pytest.raises(LabSessionError, match="only a consented session"):
+        run(cohort="automated", participant="p01")

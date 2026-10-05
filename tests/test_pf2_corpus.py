@@ -38,8 +38,10 @@ def record(
     window: str = "w1",
     executor: str = "ati-lab-executor/1.0",
     excluded: bool = False,
+    participant: str | None = None,
 ) -> dict[str, object]:
     return {
+        "participant": participant,
         "marker": "owned-domain-2026-08-25-pf2-human-consented",
         "cohort": "automated" if automated else "human-consented",
         "controlled_automation": automated,
@@ -113,6 +115,7 @@ def matched_design() -> list[dict[str, object]]:
                 automated=index % 2 == 0,
                 pacing=("H1", "H2", "H3")[(index // 2) % 3],
                 window="w1" if index < 6 else "w2",
+                participant=None if index % 2 == 0 else f"p{index % 3:02d}",
             )
         )
     return records
@@ -407,7 +410,7 @@ def cli(tmp_path: Path, records, *extra: str) -> tuple[int, Path]:
     return code, output
 
 
-def test_cli_writes_the_four_preflight_inputs_for_a_ready_corpus(tmp_path: Path) -> None:
+def test_cli_writes_the_preflight_inputs_for_a_ready_corpus(tmp_path: Path) -> None:
     code, output = cli(tmp_path, matched_design())
 
     assert code == 0
@@ -416,6 +419,7 @@ def test_cli_writes_the_four_preflight_inputs_for_a_ready_corpus(tmp_path: Path)
         "labels-by-session.json",
         "tasks-by-session.json",
         "collection-windows.json",
+        "groups-by-session.json",
         "corpus-summary.json",
     ):
         assert (output / name).exists()
@@ -446,3 +450,51 @@ def test_cli_refuses_an_existing_output_directory(tmp_path: Path, capsys) -> Non
 
     assert code == 2
     assert "refusing to overwrite" in capsys.readouterr().err
+
+
+def test_groups_keep_a_participant_together_and_automated_sessions_apart(
+    tmp_path: Path,
+) -> None:
+    _, result = built(tmp_path, matched_design())
+
+    groups, labels = result["groups"], result["labels"]
+    human = {groups[session] for session, automated in labels.items() if not automated}
+    automated = [groups[session] for session, is_automated in labels.items() if is_automated]
+    assert human == {"p00", "p01", "p02"}
+    assert len(set(automated)) == len(automated)
+    assert result["summary"]["participants"] == 3
+
+
+def test_a_consented_session_without_a_participant_code_blocks_fitting(
+    tmp_path: Path,
+) -> None:
+    records = matched_design()
+    records[1]["participant"] = None
+
+    _, result = built(tmp_path, records)
+
+    assert result["summary"]["fitting_ready"] is False
+    assert "1 consented session(s) carry no participant code" in result["summary"][
+        "fitting_blockers"
+    ]
+
+
+def test_a_single_participant_cannot_be_held_out_and_still_trained_on(tmp_path: Path) -> None:
+    records = matched_design()
+    for payload in records:
+        if not payload["controlled_automation"]:
+            payload["participant"] = "p01"
+
+    _, result = built(tmp_path, records)
+
+    assert "fewer than two coded participants in the consented cohort" in result["summary"][
+        "fitting_blockers"
+    ]
+
+
+def test_a_participant_value_that_is_not_an_opaque_code_fails_closed(tmp_path: Path) -> None:
+    records = matched_design()
+    records[1]["participant"] = "Alice"
+
+    with pytest.raises(CorpusError, match="opaque code"):
+        built(tmp_path, records)
