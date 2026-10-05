@@ -1,6 +1,6 @@
 # ATI Controlled-Corpus Feature Contract
 
-**Version:** `1.0`  
+**Version:** `1.1`  
 **Applies to:** `custom-domain-2026-08-22` and any successor corpus that explicitly adopts this contract.  
 **Purpose:** Prevent privacy expansion and experimental leakage before model training or evaluation.
 
@@ -17,6 +17,7 @@ No model, baseline, calibration stage, threshold policy, or monitoring job may i
 | Session navigation | Request count, closed-route category counts, transition-category counts, completion flag, duplicate-route count | Use route categories shared by every class; exclude campaign-specific route names and scenario-only resources |
 | HTTP method and status | GET/HEAD proportions, status-class counts, expected-vs-observed method/status compatibility | Do not use arbitrary response headers, bodies, or unapproved routes |
 | Coarsened tempo | Predefined inter-request delay bins, session duration bucket, retry-count bucket | Compute from rounded timestamps; never retain exact timestamps as a feature |
+| Tempo shape | Four-level bucket of the pauses' coefficient of variation; four-level bucket of the longest pause over the median pause | Ratios only, computed in memory from the same pauses and discarded; they reveal no absolute time, and a pacing regime that rescales every pause leaves them unchanged |
 | Protocol conformance | Valid signed-session continuation count, missing-session rejection count, query/cookie/body violation count in excluded perimeter tests | Use only controlled-session outcomes; rejected perimeter tests are never training examples unless a separate threat model approves them |
 | Aggregated consistency | Number of changes among approved coarse capability buckets, resource-request ratio, session sequence entropy after fixed bucketing | Do not use raw header strings or browser fingerprint surfaces; require cohort-size review for rare combinations |
 
@@ -62,3 +63,4 @@ The first baseline is a non-model constant classifier that reports the observed 
 | Version | Change | Approval requirement |
 |---|---|---|
 | 1.0 | Initial controlled-corpus feature firewall | Review before first model run |
+| 1.1 | Adds the tempo-shape family. In the matched design both cohorts share each pacing regime, so the absolute delay bins put nearly every pause of a regime in one bin and cannot see *how* pauses vary inside it, which is the behaviour under study. Privacy review: two four-level ratios of values already used for the delay bins, so no new raw field and no absolute timing; class-proxy review: both ratios are scale-free, so the shared regime cannot encode the label; ablation plan: the baseline already refits once without each family | Reviewed with the [model improvement evidence](https://github.com/jccontrerasg08-cpu/agent-traffic-intelligence/blob/main/docs/architecture/pf2-model-improvement-evidence.md) |

@@ -9,7 +9,7 @@ paper's seven groups of questions for the corpus that ATI-PF-2 fits and evaluate
 | **Corpus** | ATI-PF-2 matched corpus |
 | **Route catalogue** | `ati-pf2-catalogue-1` ([`catalogue.json`](../src/observation_lab/pf2/catalogue.json)) |
 | **Campaign markers** | `owned-domain-2026-09-26-pf2-matched-automated` and `owned-domain-2026-09-26-pf2-matched-human-consented` |
-| **Feature contract** | [`1.0`](feature-contract.md) |
+| **Feature contract** | [`1.1`](feature-contract.md) |
 | **Status** | **Not yet collected for fitting.** The automated cohort can run at any time. The consented human cohort waits on participants, which is a person's decision, not a code change. A 24-session automated-only diagnostic run exists, and ATI's preflight refused it as one-class, as designed ([evidence](pf2-live-perimeter-evidence.md)). |
 
 The earlier [custom-domain corpus datasheet](custom-domain-corpus-datasheet.md) governs the
@@ -52,9 +52,17 @@ fingerprint surface, mouse or keystroke data, or participant identity. The sessi
 pseudonym is keyed and cannot be reversed without the proxy's secret. The full exclusion
 list is in the [feature contract](feature-contract.md#prohibited-fields-and-proxies).
 
-**Target size.** The ATI preflight requires at least 8 complete sessions for every
-task-by-class cell by default, which means at least 32 sessions across two tasks and two
-classes. That is enough to exercise the splits honestly, not to estimate population rates.
+**Target size.** 12 consenting participants with 3 sessions each, one per regime H1, H2
+and H3, matched by 36 automated sessions: 72 sessions in all. A power analysis on synthetic
+fixtures (`ati pf2-simulate`) found that this design detects a modelled difference in how
+people pause in 90–95% of simulated collections, and never detects one that is absent
+([evidence](https://github.com/jccontrerasg08-cpu/agent-traffic-intelligence/blob/main/docs/architecture/pf2-model-improvement-evidence.md)). The ATI preflight's floor, 8 complete sessions per task-by-class cell,
+is a minimum for honest splits, not a target. Neither size estimates population rates.
+
+**Who produced each session?** Every consented session carries an opaque participant code
+such as `p01`, assigned by the operator and never a name. Each participant is assigned one
+task and one collection window, so that holding a person out never removes every human
+session from a training set.
 
 ## 3. Collection process
 
@@ -96,7 +104,11 @@ exported rows by request identifier. It fails a session closed when:
 
 It refuses the whole corpus, and writes nothing, when the executor, pacing variant,
 scenario version or catalogue version occurs in one class only, or when there is a single
-class. Those fields never reach ATI, so only this step can catch them.
+class. Those fields never reach ATI, so only this step can catch them. It also refuses a
+consented cohort with an uncoded session or fewer than two participants, and writes each
+session's participant code (or, for an automated session, its own pseudonym) to
+`groups-by-session.json`. ATI uses that file only to keep each person on one side of every
+split.
 
 ATI's `ati pf2-preflight` then derives fixed-vocabulary aggregates and discards exact
 timestamps. Session pseudonyms, tasks and windows go to a separate split manifest that no

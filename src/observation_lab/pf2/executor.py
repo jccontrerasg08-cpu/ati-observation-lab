@@ -52,6 +52,9 @@ standard library's default User-Agent, so the executor must declare its own.
 COHORTS = ("automated", "human-consented")
 _MARKER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _REQUEST_ID = re.compile(r"^[0-9a-f]{32}$")
+# An operator-assigned code such as p01. It groups one person's sessions so evaluation can
+# keep them on one side of a split; it must never be a name or any other identifier.
+PARTICIPANT_CODE = re.compile(r"^p[0-9]{2,4}$")
 
 
 class LabSessionError(RuntimeError):
@@ -75,6 +78,7 @@ class SessionRecord:
     task: str
     pacing_variant: str
     collection_window: str
+    participant: str | None = None
     executor: str = EXECUTOR_ID
     scenario_version: str = SCENARIO_VERSION
     catalogue_version: str = CATALOGUE_VERSION
@@ -94,6 +98,7 @@ class SessionRecord:
             "task": self.task,
             "pacing_variant": self.pacing_variant,
             "collection_window": self.collection_window,
+            "participant": self.participant,
             "executor": self.executor,
             "scenario_version": self.scenario_version,
             "catalogue_version": self.catalogue_version,
@@ -153,7 +158,13 @@ def check_reachability(host: str, responder: Responder) -> None:
 
 
 def _validate(
-    *, marker: str, cohort: str, task: str, pacing_variant: str, collection_window: str
+    *,
+    marker: str,
+    cohort: str,
+    task: str,
+    pacing_variant: str,
+    collection_window: str,
+    participant: str | None,
 ) -> None:
     if not _MARKER.fullmatch(marker):
         raise LabSessionError("marker must match the strict opaque marker format")
@@ -169,6 +180,13 @@ def _validate(
         )
     if not collection_window.strip():
         raise LabSessionError("collection_window must be a non-empty audit label")
+    if cohort == "human-consented":
+        if participant is None or not PARTICIPANT_CODE.fullmatch(participant):
+            raise LabSessionError(
+                "a consented session needs an opaque participant code such as p01"
+            )
+    elif participant is not None:
+        raise LabSessionError("only a consented session carries a participant code")
 
 
 def run_session(
@@ -179,6 +197,7 @@ def run_session(
     pacing_variant: str,
     collection_window: str,
     responder: Responder,
+    participant: str | None = None,
     host: str = DEFAULT_HOST,
     fetch_assets: bool = True,
     prompt: Callable[[str], object] = input,
@@ -193,6 +212,7 @@ def run_session(
         task=task,
         pacing_variant=pacing_variant,
         collection_window=collection_window,
+        participant=participant,
     )
     steps = plan_session(task, fetch_assets=fetch_assets)
     generator = rng or random.Random()
@@ -203,6 +223,7 @@ def run_session(
         task=task,
         pacing_variant=pacing_variant,
         collection_window=collection_window,
+        participant=participant,
     )
     session_header: str | None = None
 
@@ -274,6 +295,10 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Coarse collection-order label used only for the temporal holdout.",
     )
+    parser.add_argument(
+        "--participant",
+        help="Opaque code for a consenting participant, such as p01. Never a name.",
+    )
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument(
         "--no-assets", action="store_true", help="Skip the two static asset requests."
@@ -300,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
             pacing_variant=args.pacing_variant,
             collection_window=args.collection_window,
             responder=responder,
+            participant=args.participant,
             host=args.host,
             fetch_assets=not args.no_assets,
         )

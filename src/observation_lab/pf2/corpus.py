@@ -2,7 +2,7 @@
 
 The executor never sees the origin's opaque session pseudonym; it only sees the random
 `X-ATI-Request-ID` returned per request. This module joins the two through those opaque
-identifiers and writes the four local inputs `ati pf2-preflight` reads.
+identifiers and writes the local inputs `ati pf2-preflight` reads.
 
 It fails a session closed rather than repairing it: a session is excluded when the
 executor already excluded it, when any of its identifiers is missing from the export,
@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from observation_lab.pf2.catalogue import PF2_ROUTE_CATEGORIES
+from observation_lab.pf2.executor import PARTICIPANT_CODE
 
 _REQUEST_ID = re.compile(r"^[0-9a-f]{32}$")
 _SESSION_ID = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
@@ -176,6 +177,7 @@ def build(
     labels: dict[str, bool] = {}
     tasks: dict[str, str] = {}
     windows: dict[str, str] = {}
+    groups: dict[str, str] = {}
     excluded: list[dict[str, str]] = []
     accepted: list[dict[str, Any]] = []
     matched = unmatched = 0
@@ -198,6 +200,7 @@ def build(
         labels[session_id] = bool(record["_label"])
         tasks[session_id] = str(record["task"])
         windows[session_id] = str(record["collection_window"])
+        groups[session_id] = _group(record, session_id)
         corpus.extend({name: row[name] for name in _PF2_FIELDS} for row in rows)
 
     corpus.sort(key=lambda row: (str(row["session_id"]), str(row["time_iso8601"])))
@@ -211,6 +214,7 @@ def build(
         f"{dimension} value(s) {values} occur in one target class only"
         for dimension, values in confounded.items()
     )
+    blockers.extend(_participant_blockers(labels, groups))
     summary: dict[str, Any] = {
         "session_records": len(records),
         "reconciled_sessions": len(labels),
@@ -222,12 +226,58 @@ def build(
         "human_assisted_sessions": len(labels) - automated,
         "sessions_by_task": dict(sorted(Counter(tasks.values()).items())),
         "sessions_by_collection_window": dict(sorted(Counter(windows.values()).items())),
+        "participants": len(_participants(labels, groups)),
         "both_classes_present": both_classes,
         "class_confounded_audit_dimensions": confounded,
         "fitting_ready": not blockers,
         "fitting_blockers": blockers,
     }
-    return corpus, {"labels": labels, "tasks": tasks, "windows": windows, "summary": summary}
+    return corpus, {
+        "labels": labels,
+        "tasks": tasks,
+        "windows": windows,
+        "groups": groups,
+        "summary": summary,
+    }
+
+
+def _group(record: dict[str, Any], session_id: str) -> str:
+    """Name who produced a session, so evaluation can keep a person on one side of a split.
+
+    A consented session belongs to its participant. An automated session stands alone,
+    because each one is an independent run of the same executor.
+    """
+
+    participant = record.get("participant")
+    if bool(record["_label"]) or participant is None:
+        return session_id
+    if not isinstance(participant, str) or not PARTICIPANT_CODE.fullmatch(participant):
+        raise CorpusError(f"{record['_source']} participant must be an opaque code such as p01")
+    return participant
+
+
+def _participants(labels: dict[str, bool], groups: dict[str, str]) -> set[str]:
+    return {groups[session] for session, automated in labels.items() if not automated}
+
+
+def _participant_blockers(labels: dict[str, bool], groups: dict[str, str]) -> list[str]:
+    """Refuse a human cohort that cannot be split by person.
+
+    Without a code, one person's sessions could sit on both sides of a split and a model
+    would be scored on recognizing that person. With one participant, holding that person
+    out leaves no consented session to train on.
+    """
+
+    human = [session for session, automated in labels.items() if not automated]
+    if not human:
+        return []
+    blockers = []
+    uncoded = sum(groups[session] == session for session in human)
+    if uncoded:
+        blockers.append(f"{uncoded} consented session(s) carry no participant code")
+    if len(_participants(labels, groups) - set(human)) < 2:
+        blockers.append("fewer than two coded participants in the consented cohort")
+    return blockers
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -281,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
         ("labels-by-session.json", built["labels"]),
         ("tasks-by-session.json", built["tasks"]),
         ("collection-windows.json", built["windows"]),
+        ("groups-by-session.json", built["groups"]),
     ):
         (args.output_dir / name).write_text(
             json.dumps(payload, sort_keys=True), encoding="utf-8"
