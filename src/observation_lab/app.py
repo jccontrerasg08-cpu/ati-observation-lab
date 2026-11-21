@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 import re
@@ -15,37 +16,33 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+from observation_lab.pf2.catalogue import PAGE_CONTENT
+
 _CAMPAIGN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _PROXY_SESSION_ID = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
 _UA_PROVENANCE_BUCKETS = frozenset({"absent", "scripted-http", "browser-like", "other"})
 _WRITE_LOCK = threading.Lock()
+# Where each page leads. The text itself lives only in the catalogue (PAGE_CONTENT), so the
+# page the origin serves and the page the executor shows a participant cannot differ.
+_PAGE_LINKS: dict[str, tuple[tuple[str, str], ...]] = {
+    "/lab/start": (("/lab/page/landing", "Continue"),),
+    "/lab/page/landing": (("/lab/page/catalog", "Catalog"),),
+    "/lab/page/catalog": (("/lab/page/detail", "Detail"), ("/lab/page/related", "Related")),
+    "/lab/page/detail": (("/lab/complete", "Complete"),),
+    "/lab/page/related": (("/lab/complete", "Complete"),),
+    "/lab/complete": (),
+}
+
+
+def _render_page(path: str) -> str:
+    page = PAGE_CONTENT[path]
+    paragraphs = "".join(f"<p>{html.escape(text)}</p>" for text in page.paragraphs)
+    links = "".join(f'<a href="{href}">{html.escape(label)}</a>' for href, label in _PAGE_LINKS[path])
+    return f"<main><h1>{html.escape(page.title)}</h1>{paragraphs}{links}</main>"
+
+
 _LAB_CONTENT: dict[str, tuple[int, str, str]] = {
-    "/lab/start": (
-        200,
-        "text/html",
-        '<main><h1>ATI Lab Start</h1><a href="/lab/page/landing">Continue</a></main>',
-    ),
-    "/lab/page/landing": (
-        200,
-        "text/html",
-        '<main><h1>ATI Lab Landing</h1><a href="/lab/page/catalog">Catalog</a></main>',
-    ),
-    "/lab/page/catalog": (
-        200,
-        "text/html",
-        '<main><h1>ATI Lab Catalog</h1><a href="/lab/page/detail">Detail</a><a href="/lab/page/related">Related</a></main>',
-    ),
-    "/lab/page/detail": (
-        200,
-        "text/html",
-        '<main><h1>ATI Lab Detail</h1><a href="/lab/complete">Complete</a></main>',
-    ),
-    "/lab/page/related": (
-        200,
-        "text/html",
-        '<main><h1>ATI Lab Related</h1><a href="/lab/complete">Complete</a></main>',
-    ),
-    "/lab/complete": (200, "text/html", "<main><h1>ATI Lab Complete</h1></main>"),
+    **{path: (200, "text/html", _render_page(path)) for path in _PAGE_LINKS},
     "/lab/assets/site.css": (200, "text/css", "main{max-width:48rem;margin:2rem auto}"),
     "/lab/assets/pixel.svg": (
         200,

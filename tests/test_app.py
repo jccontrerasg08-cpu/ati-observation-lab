@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import re
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 import httpx
 
 from observation_lab.app import create_app
+from observation_lab.pf2.catalogue import PAGE_CONTENT, ROUTE_STATUS
 
 _TRUSTED_PROXY_HEADERS = {
     "X-ATI-Proxy-Token": "test-origin-token",
@@ -413,7 +415,7 @@ def test_pf2_shared_task_graph_allows_branches_and_completion_with_one_opaque_se
     assert related.status_code == 200
     assert 'href="/lab/complete"' in related.text
     assert complete.status_code == 200
-    assert "ATI Lab Complete" in complete.text
+    assert PAGE_CONTENT["/lab/complete"].title in complete.text
     records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
     assert [record["request_uri"] for record in records] == [
         "/lab/page/catalog",
@@ -463,3 +465,16 @@ def test_observe_rejects_an_invalid_edge_user_agent_bucket(tmp_path, monkeypatch
 
     assert response.status_code == 403
     assert not log_path.exists()
+
+
+def test_every_page_serves_its_catalogue_text_and_links_only_inside_the_catalogue() -> None:
+    from observation_lab.app import _LAB_CONTENT
+
+    for path, page in PAGE_CONTENT.items():
+        _status, media_type, body = _LAB_CONTENT[path]
+        assert media_type == "text/html"
+        assert f"<h1>{html.escape(page.title)}</h1>" in body
+        for paragraph in page.paragraphs:
+            assert f"<p>{html.escape(paragraph)}</p>" in body
+        assert set(re.findall(r'href="([^"]+)"', body)) <= set(ROUTE_STATUS)
+        assert "<script" not in body
