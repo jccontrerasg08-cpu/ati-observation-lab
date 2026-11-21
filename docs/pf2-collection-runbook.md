@@ -39,7 +39,7 @@ The analysis that comes after collection decides how the corpus is collected:
 ## 2. Consent and participant codes
 
 1. Record affirmative consent first, as the consent procedure requires.
-2. Assign each person an opaque code, `p01` to `p12` (pilot: `x01`, `x02`). The code is
+2. Assign each person an opaque code, `p01` to `p12`, and reserve `p901` and `p902` for the pilot (the executor accepts only codes of the form `p` followed by two to four digits). The code is
    never a name, initials or anything derived from the person.
 3. Keep the mapping from code to person **outside** the workspace, on paper or in a
    separate encrypted note. It is needed only to honour a withdrawal, and it is destroyed
@@ -76,8 +76,9 @@ in a block, so that edge conditions on a given day affect both cohorts.
 
 ## 4. Pilot
 
-Run `x01` and `x02` through one session each, then reconcile them (step 6) into a
-throwaway directory. Check that:
+Run `p901` and `p902` through one session each, with `--output ./local/pilot/...` so their
+files never sit beside the real sessions, then reconcile them (step 6) from
+`./local/pilot` into a throwaway output directory. Check that:
 
 - every page text appears before its prompt, and no prompt appears for an asset;
 - the participant could read each long page without hurrying;
@@ -117,12 +118,15 @@ During a human session:
 
 ## 6. Reconciliation
 
-After each window, export the origin's privacy-safe rows for that window into one JSONL
-outside Git, then reconcile everything collected so far:
+After each window, export the origin's privacy-safe rows for **every window collected so
+far** into one JSONL outside Git, with each request identifier once. A session whose
+identifiers are missing from the export is excluded, so an export of the latest window
+alone would silently drop the earlier ones. Then reconcile into a fresh output directory,
+because the builder refuses to overwrite an existing one:
 
 ```bash
 ati-lab-corpus --session-dir ./local/sessions --exported ./local/exported.jsonl \
-  --output-dir ./local/corpus
+  --output-dir ./local/corpus-after-window-3
 ```
 
 The builder refuses, and writes nothing, if any task, regime, window, executor, scenario or
@@ -131,12 +135,15 @@ until both cohorts of a window are in. After the last window it must accept the 
 
 ## 7. Evaluation
 
+Evaluate only the build made after the last window.
+
+
 ```bash
-ati pf2-preflight ./local/corpus/access.jsonl \
-  --labels-by-session ./local/corpus/labels-by-session.json \
-  --tasks-by-session ./local/corpus/tasks-by-session.json \
-  --collection-windows-by-session ./local/corpus/collection-windows.json \
-  --groups-by-session ./local/corpus/groups-by-session.json \
+ati pf2-preflight ./local/corpus-after-window-3/access.jsonl \
+  --labels-by-session ./local/corpus-after-window-3/labels-by-session.json \
+  --tasks-by-session ./local/corpus-after-window-3/tasks-by-session.json \
+  --collection-windows-by-session ./local/corpus-after-window-3/collection-windows.json \
+  --groups-by-session ./local/corpus-after-window-3/groups-by-session.json \
   --model-output model.jsonl --split-output splits.jsonl --preflight-output preflight.json
 ati pf2-baseline model.jsonl --split-manifest splits.jsonl --output baseline.json \
   --target-false-positive-rate 0.05
