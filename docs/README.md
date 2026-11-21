@@ -20,6 +20,7 @@
 |---|---|
 | [ATI-PF-2 shared task graph](ati-pf2-shared-task-graph.md) | Tasks, branches and pacing regimes both cohorts follow. |
 | [Feature contract](feature-contract.md) | What may and may not become a model feature. |
+| [ATI-PF-2 collection runbook](pf2-collection-runbook.md) | Step by step from recruitment to a baseline report: the assignment table, the pilot, collection, reconciliation and deletion. |
 | [Human control consent](human-control-consent.md) | How a consented participant joins the human cohort. |
 | [ATI-PF-2 corpus datasheet](pf2-corpus-datasheet.md) | Motivation, composition, collection, labelling, uses, distribution and maintenance of the corpus, after *Datasheets for Datasets*. |
 | [Cookie variant boundary](cookie-experiment-boundary.md) | Why cookie sessions stay a research variant. |

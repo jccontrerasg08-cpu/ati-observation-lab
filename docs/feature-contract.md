@@ -1,6 +1,6 @@
 # ATI Controlled-Corpus Feature Contract
 
-**Version:** `1.1`  
+**Version:** `1.2`  
 **Applies to:** `custom-domain-2026-08-22` and any successor corpus that explicitly adopts this contract.  
 **Purpose:** Prevent privacy expansion and experimental leakage before model training or evaluation.
 
@@ -18,6 +18,7 @@ No model, baseline, calibration stage, threshold policy, or monitoring job may i
 | HTTP method and status | GET/HEAD proportions, status-class counts, expected-vs-observed method/status compatibility | Do not use arbitrary response headers, bodies, or unapproved routes |
 | Coarsened tempo | Predefined inter-request delay bins, session duration bucket, retry-count bucket | Compute from rounded timestamps; never retain exact timestamps as a feature |
 | Tempo shape | Four-level bucket of the pauses' coefficient of variation; four-level bucket of the longest pause over the median pause | Ratios only, computed in memory from the same pauses and discarded; they reveal no absolute time, and a pacing regime that rescales every pause leaves them unchanged |
+| Content tempo | Four-level bucket of mean dwell on `long` pages over mean dwell on `short` pages, where dwell runs from a navigation to the next navigation and asset requests are skipped | Reading loads come from the closed catalogue (`ati-pf2-catalogue-2`), never from the page a person chose to linger on; one scale-free ratio computed in memory and discarded; bucket 0 when either load has no dwell |
 | Protocol conformance | Valid signed-session continuation count, missing-session rejection count, query/cookie/body violation count in excluded perimeter tests | Use only controlled-session outcomes; rejected perimeter tests are never training examples unless a separate threat model approves them |
 | Aggregated consistency | Number of changes among approved coarse capability buckets, resource-request ratio, session sequence entropy after fixed bucketing | Do not use raw header strings or browser fingerprint surfaces; require cohort-size review for rare combinations |
 
@@ -64,3 +65,4 @@ The first baseline is a non-model constant classifier that reports the observed 
 |---|---|---|
 | 1.0 | Initial controlled-corpus feature firewall | Review before first model run |
 | 1.1 | Adds the tempo-shape family. In the matched design both cohorts share each pacing regime, so the absolute delay bins put nearly every pause of a regime in one bin and cannot see *how* pauses vary inside it, which is the behaviour under study. Privacy review: two four-level ratios of values already used for the delay bins, so no new raw field and no absolute timing; class-proxy review: both ratios are scale-free, so the shared regime cannot encode the label; ablation plan: the baseline already refits once without each family | Reviewed with the [model improvement evidence](https://github.com/jccontrerasg08-cpu/agent-traffic-intelligence/blob/main/docs/architecture/pf2-model-improvement-evidence.md) |
+| 1.2 | Adds the content-tempo family. Tempo shape cannot tell a person from a timer that draws its pauses from a person-like distribution, because both produce the same pause shape. What such a timer does not do is spend its long pauses on the pages that take long to read. Every page now declares a reading load in the catalogue, the same for both cohorts. Privacy review: one four-level ratio of dwell times already derived in memory, and page texts are fixed filler with no personal data; class-proxy review: the loads are a property of the shared catalogue and the ratio is scale-free, so neither cohort nor pacing regime can encode the label; ablation plan: the baseline refits without each family, and the evidence record reports a content-aware mimic that this family must not detect | Reviewed with Evidence 5 of the [model improvement evidence](https://github.com/jccontrerasg08-cpu/agent-traffic-intelligence/blob/main/docs/architecture/pf2-model-improvement-evidence.md) |

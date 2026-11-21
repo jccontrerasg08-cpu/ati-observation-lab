@@ -7,9 +7,9 @@ paper's seven groups of questions for the corpus that ATI-PF-2 fits and evaluate
 | | |
 |---|---|
 | **Corpus** | ATI-PF-2 matched corpus |
-| **Route catalogue** | `ati-pf2-catalogue-1` ([`catalogue.json`](../src/observation_lab/pf2/catalogue.json)) |
+| **Route catalogue** | `ati-pf2-catalogue-2` ([`catalogue.json`](../src/observation_lab/pf2/catalogue.json)) |
 | **Campaign markers** | `owned-domain-2026-09-26-pf2-matched-automated` and `owned-domain-2026-09-26-pf2-matched-human-consented` |
-| **Feature contract** | [`1.1`](feature-contract.md) |
+| **Feature contract** | [`1.2`](feature-contract.md) |
 | **Status** | **Not yet collected for fitting.** The automated cohort can run at any time. The consented human cohort waits on participants, which is a person's decision, not a code change. A 24-session automated-only diagnostic run exists, and ATI's preflight refused it as one-class, as designed ([evidence](pf2-live-perimeter-evidence.md)). |
 
 The earlier [custom-domain corpus datasheet](custom-domain-corpus-datasheet.md) governs the
@@ -76,6 +76,9 @@ session from a training set.
    pseudonymized JSONL.
 3. Each response carries a fresh random `X-ATI-Request-ID`. The executor records it
    next to its own label, and that identifier is the only link between label and row.
+
+The [collection runbook](pf2-collection-runbook.md) is the operating procedure: recruitment,
+the assignment table, the pilot, collection, reconciliation and deletion.
 
 **What is held equal across cohorts?** The executor and its User-Agent, the route plan and
 task menu, the pacing regimes H1, H2 and H3, and the collection windows

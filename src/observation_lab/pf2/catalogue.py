@@ -36,6 +36,37 @@ PF2_ROUTE_CATEGORIES: MappingProxyType[str, str] = MappingProxyType(
 )
 """Routes eligible for an ATI-PF-2 corpus and their coarse category."""
 
+READING_LOAD: MappingProxyType[str, str] = MappingProxyType(
+    {
+        route["path"]: route["reading_load"]
+        for route in _RAW["routes"]
+        if route["reading_load"] is not None
+    }
+)
+"""How much each page gives a reader to read: `short` or `long`. Assets have none.
+
+ATI pins the same load per route category, so its dwell-ratio feature and this catalogue
+cannot disagree about which pages are long.
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class PageContent:
+    """The title and paragraphs a page shows, served by the origin and shown by the executor."""
+
+    title: str
+    paragraphs: tuple[str, ...]
+
+
+PAGE_CONTENT: MappingProxyType[str, PageContent] = MappingProxyType(
+    {
+        route["path"]: PageContent(route["title"], tuple(route["text"]))
+        for route in _RAW["routes"]
+        if "text" in route
+    }
+)
+"""Page text, held only here so the page served and the page read are the same."""
+
 TASK_BRANCHES: MappingProxyType[str, str] = MappingProxyType(dict(_RAW["task_branches"]))
 """Audit-only task names and the branch route each one takes."""
 

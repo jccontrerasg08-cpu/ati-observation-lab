@@ -12,7 +12,9 @@ from observation_lab.pf2.catalogue import (
     CATALOGUE_VERSION,
     HUMAN_PACING_VARIANTS,
     PACING_VARIANTS,
+    PAGE_CONTENT,
     PF2_ROUTE_CATEGORIES,
+    READING_LOAD,
     ROUTE_STATUS,
     TASK_BRANCHES,
     plan_session,
@@ -20,7 +22,7 @@ from observation_lab.pf2.catalogue import (
 
 # Pinned identically in agent-traffic-intelligence (tests/evaluation/
 # test_pf2_catalogue_parity.py) against PF2_ROUTE_CATEGORIES there. Change both together.
-ATI_PINNED_VERSION = "ati-pf2-catalogue-1"
+ATI_PINNED_VERSION = "ati-pf2-catalogue-2"
 ATI_PINNED_CATEGORIES = {
     "/lab/start": "start",
     "/lab/page/landing": "landing",
@@ -30,6 +32,15 @@ ATI_PINNED_CATEGORIES = {
     "/lab/complete": "complete",
     "/lab/assets/site.css": "asset",
     "/lab/assets/pixel.svg": "asset",
+}
+# Also pinned in ATI as PF2_READING_LOAD, per route category.
+ATI_PINNED_READING_LOAD = {
+    "start": "short",
+    "landing": "short",
+    "complete": "short",
+    "catalog": "long",
+    "detail": "long",
+    "related": "long",
 }
 WORKER_SOURCE = Path(__file__).resolve().parents[1] / "cloudflare-worker/src/index.mjs"
 
@@ -50,6 +61,26 @@ def test_worker_allowlists_exactly_the_catalogue_routes() -> None:
 def test_pf2_mapping_matches_the_mapping_pinned_in_ati() -> None:
     assert CATALOGUE_VERSION == ATI_PINNED_VERSION
     assert dict(PF2_ROUTE_CATEGORIES) == ATI_PINNED_CATEGORIES
+    by_category = {PF2_ROUTE_CATEGORIES[path]: load for path, load in READING_LOAD.items()}
+    assert by_category == ATI_PINNED_READING_LOAD
+
+
+def test_every_page_has_a_reading_load_and_text_and_nothing_else_does() -> None:
+    pages = {path for path, category in PF2_ROUTE_CATEGORIES.items() if category != "asset"}
+    assert set(READING_LOAD) == pages
+    assert set(PAGE_CONTENT) == pages
+    for path in pages:
+        assert PAGE_CONTENT[path].title and PAGE_CONTENT[path].paragraphs
+
+
+def test_long_pages_give_a_reader_markedly_more_to_read_than_short_ones() -> None:
+    words = {
+        path: sum(len(paragraph.split()) for paragraph in page.paragraphs)
+        for path, page in PAGE_CONTENT.items()
+    }
+    shortest_long = min(words[path] for path, load in READING_LOAD.items() if load == "long")
+    longest_short = max(words[path] for path, load in READING_LOAD.items() if load == "short")
+    assert shortest_long >= 5 * longest_short
 
 
 def test_the_integrity_only_error_route_is_served_but_never_pf2_eligible() -> None:

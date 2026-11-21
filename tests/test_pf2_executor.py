@@ -5,9 +5,14 @@ import random
 
 import pytest
 
-from observation_lab.pf2.catalogue import CATALOGUE_VERSION, PACING_VARIANTS
+from observation_lab.pf2.catalogue import (
+    CATALOGUE_VERSION,
+    PACING_VARIANTS,
+    PAGE_CONTENT,
+)
 from observation_lab.pf2.executor import (
     EXECUTOR_ID,
+    READING_SCENARIO_VERSION,
     SCENARIO_VERSION,
     LabSessionError,
     SessionRecord,
@@ -260,3 +265,67 @@ def test_a_consented_session_needs_an_opaque_participant_code(code: str | None) 
 def test_an_automated_session_never_carries_a_participant_code() -> None:
     with pytest.raises(LabSessionError, match="only a consented session"):
         run(cohort="automated", participant="p01")
+
+
+def test_reading_scenario_shows_each_page_and_never_prompts_for_an_asset() -> None:
+    prompts: list[str] = []
+    shown: list[str] = []
+
+    record = run(
+        cohort="human-consented",
+        scenario_version=READING_SCENARIO_VERSION,
+        prompt=prompts.append,
+        display=shown.append,
+    )
+
+    pages = [r["path"] for r in record.requests if "/assets/" not in str(r["path"])]
+    # One prompt per navigation after the first page; never one for an asset.
+    assert len(prompts) == len(pages) - 1
+    assert all("/lab/assets/" not in text for text in prompts)
+    # Every page's title is shown, in order, the last one after the session completes.
+    titles = [PAGE_CONTENT[str(path)].title for path in pages]
+    assert [next(t for t in titles if f"== {t} ==" in text) for text in shown] == titles
+    assert record.scenario_version == READING_SCENARIO_VERSION
+
+
+def test_reading_scenario_shows_exactly_the_catalogue_text() -> None:
+    shown: list[str] = []
+
+    run(
+        cohort="human-consented",
+        scenario_version=READING_SCENARIO_VERSION,
+        display=shown.append,
+    )
+
+    detail = PAGE_CONTENT["/lab/page/detail"]
+    text = next(block for block in shown if detail.title in block)
+    flattened = " ".join(text.split())
+    assert all(" ".join(paragraph.split()) in flattened for paragraph in detail.paragraphs)
+
+
+def test_reading_scenario_fetches_assets_without_pausing_for_either_cohort() -> None:
+    slept: list[float] = []
+
+    record = run(
+        cohort="automated", scenario_version=READING_SCENARIO_VERSION, sleep=slept.append
+    )
+
+    navigations = [r for r in record.requests if "/assets/" not in str(r["path"])]
+    assert len(slept) == len(navigations) - 1
+    assert len(record.requests) == 7
+
+
+def test_keypress_scenario_is_unchanged_by_the_reading_scenario() -> None:
+    prompts: list[str] = []
+    shown: list[str] = []
+
+    record = run(cohort="human-consented", prompt=prompts.append, display=shown.append)
+
+    assert len(prompts) == len(record.requests) - 1
+    assert shown == []
+    assert record.scenario_version == SCENARIO_VERSION
+
+
+def test_an_unknown_scenario_version_is_refused() -> None:
+    with pytest.raises(LabSessionError, match="scenario_version"):
+        run(scenario_version="ati-pf2-9.9")

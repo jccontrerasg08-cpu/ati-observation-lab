@@ -25,6 +25,7 @@ import json
 import random
 import re
 import sys
+import textwrap
 import time
 import urllib.error
 import urllib.request
@@ -37,11 +38,18 @@ from observation_lab.pf2.catalogue import (
     CATALOGUE_VERSION,
     HUMAN_PACING_VARIANTS,
     PACING_VARIANTS,
+    PAGE_CONTENT,
+    PF2_ROUTE_CATEGORIES,
     TASK_BRANCHES,
     plan_session,
 )
 
 SCENARIO_VERSION = "ati-pf2-1.0"
+"""The keypress scenario: every step, assets included, waits for a pause or a keypress."""
+READING_SCENARIO_VERSION = "ati-pf2-1.1"
+"""The reading scenario: assets follow their page at once, and a participant reads each page
+before moving on."""
+SCENARIO_VERSIONS = (SCENARIO_VERSION, READING_SCENARIO_VERSION)
 DEFAULT_HOST = "https://observe.ati-observation-lab.com"
 EXECUTOR_ID = "ati-lab-executor/1.0"
 """Declared User-Agent and executor version, shared by both cohorts.
@@ -165,7 +173,10 @@ def _validate(
     pacing_variant: str,
     collection_window: str,
     participant: str | None,
+    scenario_version: str = SCENARIO_VERSION,
 ) -> None:
+    if scenario_version not in SCENARIO_VERSIONS:
+        raise LabSessionError(f"scenario_version must be one of {list(SCENARIO_VERSIONS)}")
     if not _MARKER.fullmatch(marker):
         raise LabSessionError("marker must match the strict opaque marker format")
     if cohort not in COHORTS:
@@ -200,11 +211,19 @@ def run_session(
     participant: str | None = None,
     host: str = DEFAULT_HOST,
     fetch_assets: bool = True,
+    scenario_version: str = SCENARIO_VERSION,
     prompt: Callable[[str], object] = input,
+    display: Callable[[str], object] = print,
     sleep: Callable[[float], object] = time.sleep,
     rng: random.Random | None = None,
 ) -> SessionRecord:
-    """Execute one closed-catalogue session and return only approved audit fields."""
+    """Execute one closed-catalogue session and return only approved audit fields.
+
+    In the reading scenario an asset is fetched right after its page, as a browser would,
+    for both cohorts; and a consenting participant is shown each page's text and decides
+    when to move on. The text shown is the catalogue's, which is also what the origin
+    serves.
+    """
 
     _validate(
         marker=marker,
@@ -213,8 +232,11 @@ def run_session(
         pacing_variant=pacing_variant,
         collection_window=collection_window,
         participant=participant,
+        scenario_version=scenario_version,
     )
     steps = plan_session(task, fetch_assets=fetch_assets)
+    reading = scenario_version == READING_SCENARIO_VERSION
+    human = cohort == "human-consented"
     generator = rng or random.Random()
     low, high = PACING_VARIANTS[pacing_variant]
     record = SessionRecord(
@@ -224,12 +246,19 @@ def run_session(
         pacing_variant=pacing_variant,
         collection_window=collection_window,
         participant=participant,
+        scenario_version=scenario_version,
     )
     session_header: str | None = None
 
+    page: str | None = None
     for sequence, step in enumerate(steps, start=1):
-        if sequence > 1:
-            if cohort == "human-consented":
+        is_asset = PF2_ROUTE_CATEGORIES[step.path] == "asset"
+        if sequence > 1 and not (reading and is_asset):
+            if human and reading:
+                assert page is not None
+                display(_page_text(page))
+                prompt("  Press Enter when you have read this page: ")
+            elif human:
                 prompt(
                     f"  [{sequence}/{len(steps)}] press Enter when ready for {step.path}: "
                 )
@@ -268,7 +297,17 @@ def run_session(
                 record.excluded = True
                 record.exclusion_reason = "the edge issued no signed lab session"
                 return record
+        if not is_asset:
+            page = step.path
+    if human and reading and page is not None:
+        display(_page_text(page))
     return record
+
+
+def _page_text(path: str) -> str:
+    content = PAGE_CONTENT[path]
+    paragraphs = [textwrap.fill(paragraph, width=78) for paragraph in content.paragraphs]
+    return "\n\n".join(["", f"== {content.title} ==", *paragraphs, ""])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -294,6 +333,12 @@ def main(argv: list[str] | None = None) -> int:
         "--collection-window",
         required=True,
         help="Coarse collection-order label used only for the temporal holdout.",
+    )
+    parser.add_argument(
+        "--scenario-version",
+        choices=SCENARIO_VERSIONS,
+        default=SCENARIO_VERSION,
+        help="ati-pf2-1.1 shows a participant each page and fetches assets with their page.",
     )
     parser.add_argument(
         "--participant",
@@ -326,6 +371,7 @@ def main(argv: list[str] | None = None) -> int:
             collection_window=args.collection_window,
             responder=responder,
             participant=args.participant,
+            scenario_version=args.scenario_version,
             host=args.host,
             fetch_assets=not args.no_assets,
         )

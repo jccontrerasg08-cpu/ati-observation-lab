@@ -118,16 +118,24 @@ handling and every regime are then shared by both classes, so the only thing lef
 differ is who decides when each request happens — the behavior being measured. The
 cohort is the label and the pacing variant is the regime; they are independent inputs.
 
+Use scenario `ati-pf2-1.1` for a fitting corpus. Every page carries a reading load and
+its own text in the catalogue; the executor shows a participant each page's text before
+they continue, and fetches assets right after their page, for both cohorts, as a browser
+would. The earlier scenario `ati-pf2-1.0` prompted before every request, assets included,
+so it recorded how fast a person presses Enter, not how they read. The
+[collection runbook](docs/pf2-collection-runbook.md) gives the full procedure: recruitment,
+the assignment table for twelve participants, the pilot and deletion.
+
 ```bash
 # 1. One session per invocation. Assign tasks, regimes and windows so that every value
 #    appears in both cohorts. The human cohort requires a consent record first and always
 #    runs interactively; the automated cohort follows the same H regimes on a timer.
-ati-lab-session --cohort automated \
+ati-lab-session --scenario-version ati-pf2-1.1 --cohort automated \
   --marker owned-domain-2026-09-26-pf2-matched-automated \
   --task task-detail --pacing-variant H2 --collection-window 2026-09-27-block-1 \
   --output ./local/sessions/automated-001.json
 
-ati-lab-session --cohort human-consented --participant p01 \
+ati-lab-session --scenario-version ati-pf2-1.1 --cohort human-consented --participant p01 \
   --marker owned-domain-2026-09-26-pf2-matched-human-consented \
   --task task-detail --pacing-variant H2 --collection-window 2026-09-27-block-1 \
   --output ./local/sessions/human-001.json

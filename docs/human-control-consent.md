@@ -62,7 +62,7 @@ A standard browser navigation cannot automatically replay a custom response sess
 The automated cohort runs through the **same** executor, with the same route plan and the same H1–H3 regimes on a timer. Executor, User-Agent, header handling, route plan and pacing regime are then shared by both classes, so none of them can separate the cohorts; see the matched-executor design in the laboratory README.
 
 ```bash
-ati-lab-session --cohort human-consented \
+ati-lab-session --scenario-version ati-pf2-1.1 --cohort human-consented \
   --participant p01 \
   --marker owned-domain-2026-09-26-pf2-matched-human-consented \
   --task task-detail \
@@ -70,6 +70,8 @@ ati-lab-session --cohort human-consented \
   --collection-window 2026-09-27-block-1 \
   --output ./local/sessions/human-01.json
 ```
+
+In scenario `ati-pf2-1.1` the participant reads each page's text in the terminal before pressing Enter to continue; assets load on their own. The [collection runbook](pf2-collection-runbook.md) gives the assignment table, the pilot and the order of sessions.
 
 `--participant` takes an opaque code the operator assigns, such as `p01`; it is never the person's name, initials or any other identifier, and the mapping from code to person is not recorded anywhere in the corpus. The code lets evaluation keep each person's sessions on one side of every split, so a model is never scored on someone it was trained on. Use the same code for all of one person's sessions, and recruit at least two participants: a cohort with one cannot be held out and still trained on.
 

@@ -1,15 +1,57 @@
 {
-  "version": "ati-pf2-catalogue-1",
+  "version": "ati-pf2-catalogue-2",
   "routes": [
-    {"path": "/lab/start", "status": 200, "pf2_category": "start"},
-    {"path": "/lab/page/landing", "status": 200, "pf2_category": "landing"},
-    {"path": "/lab/page/catalog", "status": 200, "pf2_category": "catalog"},
-    {"path": "/lab/page/detail", "status": 200, "pf2_category": "detail"},
-    {"path": "/lab/page/related", "status": 200, "pf2_category": "related"},
-    {"path": "/lab/complete", "status": 200, "pf2_category": "complete"},
-    {"path": "/lab/assets/site.css", "status": 200, "pf2_category": "asset"},
-    {"path": "/lab/assets/pixel.svg", "status": 200, "pf2_category": "asset"},
-    {"path": "/lab/missing", "status": 404, "pf2_category": null}
+    {
+      "path": "/lab/start", "status": 200, "pf2_category": "start", "reading_load": "short",
+      "title": "Welcome",
+      "text": [
+        "This short visit has a few pages. Read each one at your own pace, then continue."
+      ]
+    },
+    {
+      "path": "/lab/page/landing", "status": 200, "pf2_category": "landing", "reading_load": "short",
+      "title": "About this laboratory",
+      "text": [
+        "This site exists only to be visited under controlled conditions. It stores no names, cookies or addresses."
+      ]
+    },
+    {
+      "path": "/lab/page/catalog", "status": 200, "pf2_category": "catalog", "reading_load": "long",
+      "title": "What the laboratory measures",
+      "text": [
+        "Every request that reaches this site has passed an edge that admits only a closed list of pages. The edge checks a campaign marker, issues a short-lived session, and forwards only a coarse description of the client software. The origin behind it refuses anything the edge did not vouch for.",
+        "For each request the origin keeps a small record: when it arrived, which page it asked for, whether it succeeded, and an opaque session pseudonym. It keeps no address, no cookie, no query string and no content of the request.",
+        "Those records are later grouped into sessions. Only coarse summaries of each session, such as how many pages it visited and how its pauses compare with one another, ever reach a model. Nothing here is used to block, track or identify anyone."
+      ]
+    },
+    {
+      "path": "/lab/page/detail", "status": 200, "pf2_category": "detail", "reading_load": "long",
+      "title": "How a session becomes evidence",
+      "text": [
+        "A session is labelled before it starts, by the person running it, as either automated or a consenting participant. The label never comes from the behaviour itself, which is what keeps the measurement honest.",
+        "Sessions from the same person are always kept together when the data is split into training and test sets, so a model is never scored on someone it has already seen. The last collection window is held back as a final test that no choice is tuned on.",
+        "A result counts only if it beats a baseline that always predicts the most common label, by a margin that survives resampling. A result that does not is reported as it is, because a negative result is still evidence."
+      ]
+    },
+    {
+      "path": "/lab/page/related", "status": 200, "pf2_category": "related", "reading_load": "long",
+      "title": "Why the pages differ in length",
+      "text": [
+        "Some of these pages are short and some are long. People usually spend longer on a page that gives them more to read, while simple automation tends to wait the same way whatever a page contains.",
+        "The laboratory does not record what you read or how you read it. It records only when each page was requested, and later reduces that to one coarse number per visit: how much longer the long pages kept you than the short ones.",
+        "Automation can be built to imitate that, and the project says so openly. Every measurement is published together with the adversary it was tested against and the point at which it stops working."
+      ]
+    },
+    {
+      "path": "/lab/complete", "status": 200, "pf2_category": "complete", "reading_load": "short",
+      "title": "Thank you",
+      "text": [
+        "The visit is complete. You can close this window."
+      ]
+    },
+    {"path": "/lab/assets/site.css", "status": 200, "pf2_category": "asset", "reading_load": null},
+    {"path": "/lab/assets/pixel.svg", "status": 200, "pf2_category": "asset", "reading_load": null},
+    {"path": "/lab/missing", "status": 404, "pf2_category": null, "reading_load": null}
   ],
   "task_branches": {
     "task-detail": "/lab/page/detail",
