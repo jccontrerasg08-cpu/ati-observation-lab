@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from observation_lab.pf2.catalogue import PF2_ROUTE_CATEGORIES
-from observation_lab.pf2.executor import PARTICIPANT_CODE
+from observation_lab.pf2.executor import AUTOMATION_PACINGS, PARTICIPANT_CODE
 
 _REQUEST_ID = re.compile(r"^[0-9a-f]{32}$")
 _SESSION_ID = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
@@ -62,6 +62,20 @@ def _label(payload: dict[str, Any], source: str) -> bool:
     return label
 
 
+def _pacing(payload: dict[str, Any], source: str) -> str | None:
+    """Return the automated cohort's adversary, `timer` for a record from before spec 003."""
+
+    pacing = payload.get("automation_pacing")
+    if not payload["_label"]:
+        if pacing is not None:
+            raise CorpusError(f"{source} automation_pacing applies to automated sessions only")
+        return None
+    pacing = "timer" if pacing is None else pacing
+    if pacing not in AUTOMATION_PACINGS:
+        raise CorpusError(f"{source} automation_pacing must be one of {list(AUTOMATION_PACINGS)}")
+    return str(pacing)
+
+
 def load_session_records(paths: list[Path]) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for path in sorted(paths):
@@ -84,6 +98,7 @@ def load_session_records(paths: list[Path]) -> list[dict[str, Any]]:
         if "controlled_automation" not in payload:
             raise CorpusError(f"{path.name} is missing the controlled_automation label")
         payload["_label"] = _label(payload, path.name)
+        payload["_pacing"] = _pacing(payload, path.name)
         payload["_source"] = path.name
         records.append(payload)
     if not records:
@@ -215,6 +230,12 @@ def build(
         for dimension, values in confounded.items()
     )
     blockers.extend(_participant_blockers(labels, groups))
+    pacings = sorted({str(record["_pacing"]) for record in accepted if record["_label"]})
+    if len(pacings) > 1:
+        blockers.append(
+            f"automated sessions mix automation pacings {pacings}; "
+            "use one adversary per corpus so detection is reported per adversary"
+        )
     summary: dict[str, Any] = {
         "session_records": len(records),
         "reconciled_sessions": len(labels),
@@ -227,6 +248,7 @@ def build(
         "sessions_by_task": dict(sorted(Counter(tasks.values()).items())),
         "sessions_by_collection_window": dict(sorted(Counter(windows.values()).items())),
         "participants": len(_participants(labels, groups)),
+        "automation_pacing": pacings[0] if len(pacings) == 1 else None,
         "both_classes_present": both_classes,
         "class_confounded_audit_dimensions": confounded,
         "fitting_ready": not blockers,

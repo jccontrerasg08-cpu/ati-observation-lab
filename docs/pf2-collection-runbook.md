@@ -158,6 +158,13 @@ Read the report in this order:
 3. The session-cluster lower bound. With 12 participants it will be wide. Report it as it
    is.
 
+Then test the result against real adversaries. Run the 36 automated sessions twice more,
+with `--automation-pacing imitate` and with `--automation-pacing imitate-content`, each
+into its own directory together with a copy of the 36 human session files (for example
+`./local/sessions-imitate`), and reconcile each directory into its own corpus. The builder refuses a corpus that mixes adversaries. Report detection for each
+corpus beside the timer's: a model that only beats the timer has not shown it can tell
+people from automation that imitates them.
+
 Before writing any result, run the same evaluation on simulated corpora of the same shape
 (`ati pf2-simulate --scenario reading --participants 12 --sessions-per-cell 1`), including
 the content-aware mimic, so the reader can see what this design can and cannot detect.

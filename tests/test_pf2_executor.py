@@ -9,9 +9,12 @@ from observation_lab.pf2.catalogue import (
     CATALOGUE_VERSION,
     PACING_VARIANTS,
     PAGE_CONTENT,
+    READING_LOAD,
 )
 from observation_lab.pf2.executor import (
+    AUTOMATION_PACINGS,
     EXECUTOR_ID,
+    LOAD_FACTOR,
     READING_SCENARIO_VERSION,
     SCENARIO_VERSION,
     LabSessionError,
@@ -163,6 +166,7 @@ def test_record_holds_only_approved_audit_fields_and_no_delay() -> None:
         "executor",
         "scenario_version",
         "catalogue_version",
+        "automation_pacing",
         "excluded",
         "exclusion_reason",
         "request_count",
@@ -329,3 +333,146 @@ def test_keypress_scenario_is_unchanged_by_the_reading_scenario() -> None:
 def test_an_unknown_scenario_version_is_refused() -> None:
     with pytest.raises(LabSessionError, match="scenario_version"):
         run(scenario_version="ati-pf2-9.9")
+
+
+# --- Spec 003: an imitating automated cohort -------------------------------------------
+
+ATI_PINNED_LOAD_FACTOR = {"short": 0.8, "long": 1.6}
+"""The reading-load factors ATI's simulator uses; the executor must imitate the same."""
+
+
+def _navigation_pauses(**overrides: object) -> tuple[SessionRecord, list[float]]:
+    slept: list[float] = []
+    record = run(
+        scenario_version=READING_SCENARIO_VERSION, sleep=slept.append, **overrides
+    )
+    return record, slept
+
+
+def test_the_load_factors_match_ati() -> None:
+    assert dict(LOAD_FACTOR) == ATI_PINNED_LOAD_FACTOR
+
+
+def test_the_timer_is_the_default_and_is_recorded() -> None:
+    record = run()
+
+    assert record.automation_pacing == "timer"
+    assert AUTOMATION_PACINGS == ("timer", "imitate", "imitate-content")
+
+
+def test_a_consented_session_records_no_automation_pacing() -> None:
+    assert run(cohort="human-consented").automation_pacing is None
+
+
+def test_a_consented_session_cannot_take_an_automation_pacing() -> None:
+    with pytest.raises(LabSessionError, match="automated cohort"):
+        run(cohort="human-consented", automation_pacing="imitate")
+
+
+def test_an_unknown_automation_pacing_is_refused() -> None:
+    with pytest.raises(LabSessionError, match="automation_pacing"):
+        run(automation_pacing="replay")
+
+
+def test_the_content_aware_mimic_needs_the_reading_scenario() -> None:
+    with pytest.raises(LabSessionError, match="reading scenario"):
+        run(automation_pacing="imitate-content")
+
+
+@pytest.mark.parametrize("pacing", ["imitate", "imitate-content"])
+def test_imitation_pauses_only_before_navigations(pacing: str) -> None:
+    record, slept = _navigation_pauses(automation_pacing=pacing)
+
+    navigations = [r for r in record.requests if "/assets/" not in str(r["path"])]
+    assert len(slept) == len(navigations) - 1
+    assert all(pause > 0 for pause in slept)
+
+
+def test_imitation_is_irregular_where_the_timer_is_bounded() -> None:
+    # Over many sessions a person-like pause leaves the regime's range at times; the
+    # timer never does.
+    low, high = PACING_VARIANTS["H1"]
+    imitated = [
+        pause
+        for seed in range(40)
+        for pause in _navigation_pauses(
+            automation_pacing="imitate", rng=random.Random(seed)
+        )[1]
+    ]
+
+    assert any(not low <= pause <= high for pause in imitated)
+
+
+def _ratio(pacing: str) -> float:
+    long_pauses: list[float] = []
+    short_pauses: list[float] = []
+    for seed in range(60):
+        record, slept = _navigation_pauses(
+            automation_pacing=pacing, rng=random.Random(seed)
+        )
+        pages = [
+            str(r["path"]) for r in record.requests if "/assets/" not in str(r["path"])
+        ]
+        for left, pause in zip(pages, slept, strict=False):
+            (long_pauses if READING_LOAD[left] == "long" else short_pauses).append(
+                pause
+            )
+    return (sum(long_pauses) / len(long_pauses)) / (
+        sum(short_pauses) / len(short_pauses)
+    )
+
+
+def test_only_the_content_aware_mimic_dwells_longer_on_long_pages() -> None:
+    assert _ratio("imitate-content") > 1.6
+    assert _ratio("imitate") < 1.4
+    assert _ratio("timer") < 1.3
+
+
+def test_the_record_never_holds_a_pause() -> None:
+    record, slept = _navigation_pauses(automation_pacing="imitate-content")
+
+    serialized = json.dumps(record.to_dict())
+    assert record.to_dict()["automation_pacing"] == "imitate-content"
+    assert all(f"{pause}" not in serialized for pause in slept)
+
+
+def test_cli_records_the_automation_pacing(tmp_path, monkeypatch) -> None:
+    from observation_lab.pf2 import executor
+
+    monkeypatch.setattr(executor, "urllib_responder", lambda: FakeEdge())
+    monkeypatch.setattr(executor, "check_reachability", lambda _host, _responder: None)
+    monkeypatch.setattr(executor.time, "sleep", lambda _seconds: None)
+    output = tmp_path / "session.json"
+
+    code = executor.main(
+        [
+            "--marker", MARKER, "--cohort", "automated", "--task", "task-detail",
+            "--pacing-variant", "H1", "--collection-window", "w1",
+            "--scenario-version", READING_SCENARIO_VERSION,
+            "--automation-pacing", "imitate-content",
+            "--host", "https://observe.example", "--output", str(output),
+        ]
+    )  # fmt: skip
+
+    assert code == 0
+    assert json.loads(output.read_text())["automation_pacing"] == "imitate-content"
+
+
+def test_cli_refuses_the_content_aware_mimic_without_reading(tmp_path, monkeypatch) -> None:
+    from observation_lab.pf2 import executor
+
+    monkeypatch.setattr(executor, "urllib_responder", lambda: FakeEdge())
+    monkeypatch.setattr(executor, "check_reachability", lambda _host, _responder: None)
+    output = tmp_path / "session.json"
+
+    code = executor.main(
+        [
+            "--marker", MARKER, "--cohort", "automated", "--task", "task-detail",
+            "--pacing-variant", "H1", "--collection-window", "w1",
+            "--automation-pacing", "imitate-content",
+            "--host", "https://observe.example", "--output", str(output),
+        ]
+    )  # fmt: skip
+
+    assert code == 2
+    assert not output.exists()

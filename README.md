@@ -126,6 +126,14 @@ so it recorded how fast a person presses Enter, not how they read. The
 [collection runbook](docs/pf2-collection-runbook.md) gives the full procedure: recruitment,
 the assignment table for twelve participants, the pilot and deletion.
 
+The automated cohort can also play an adversary. `--automation-pacing imitate` draws
+person-like pauses from a persona of the session's own and places them without regard to
+the page; `--automation-pacing imitate-content` also stretches each pause by the reading
+load of the page it leaves, and needs `ati-pf2-1.1`. Both mirror the adversaries of ATI's
+`pf2-simulate`. The default stays `timer`. `ati-lab-corpus` records the adversary in its
+summary and refuses a corpus that mixes two, so detection is always reported per
+adversary. Run the adversary corpora against the same human sessions as the timer corpus.
+
 ```bash
 # 1. One session per invocation. Assign tasks, regimes and windows so that every value
 #    appears in both cohorts. The human cohort requires a consent record first and always
