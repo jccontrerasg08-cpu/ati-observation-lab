@@ -498,3 +498,43 @@ def test_a_participant_value_that_is_not_an_opaque_code_fails_closed(tmp_path: P
 
     with pytest.raises(CorpusError, match="opaque code"):
         built(tmp_path, records)
+
+
+def test_a_corpus_names_its_adversary(tmp_path: Path) -> None:
+    records = matched_design()
+    for payload in records:
+        if payload["controlled_automation"]:
+            payload["automation_pacing"] = "imitate"
+
+    _, result = built(tmp_path, records)
+
+    summary = result["summary"]
+    assert summary["automation_pacing"] == "imitate"
+    assert summary["fitting_ready"] is True
+
+
+def test_a_record_from_before_imitation_counts_as_the_timer(tmp_path: Path) -> None:
+    _, result = built(tmp_path, matched_design())
+
+    assert result["summary"]["automation_pacing"] == "timer"
+
+
+def test_mixing_adversaries_in_one_corpus_blocks_fitting(tmp_path: Path) -> None:
+    records = matched_design()
+    automated = [payload for payload in records if payload["controlled_automation"]]
+    automated[0]["automation_pacing"] = "imitate-content"
+
+    _, result = built(tmp_path, records)
+
+    summary = result["summary"]
+    assert summary["fitting_ready"] is False
+    assert summary["automation_pacing"] is None
+    assert any("one adversary per corpus" in blocker for blocker in summary["fitting_blockers"])
+
+
+def test_an_unknown_adversary_fails_closed(tmp_path: Path) -> None:
+    records = matched_design()
+    records[0]["automation_pacing"] = "replay"
+
+    with pytest.raises(CorpusError, match="automation_pacing"):
+        built(tmp_path, records)

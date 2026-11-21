@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import re
 import sys
@@ -29,9 +30,10 @@ import textwrap
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import Protocol
 
 from observation_lab.pf2.catalogue import (
@@ -40,7 +42,9 @@ from observation_lab.pf2.catalogue import (
     PACING_VARIANTS,
     PAGE_CONTENT,
     PF2_ROUTE_CATEGORIES,
+    READING_LOAD,
     TASK_BRANCHES,
+    Step,
     plan_session,
 )
 
@@ -58,6 +62,20 @@ The edge's managed browser-integrity rule answers 403 (error 1010) for the Pytho
 standard library's default User-Agent, so the executor must declare its own.
 """
 COHORTS = ("automated", "human-consented")
+AUTOMATION_PACINGS = ("timer", "imitate", "imitate-content")
+"""How the automated cohort chooses its pauses (spec 003).
+
+`timer` draws each pause uniformly inside the regime. `imitate` draws person-like pauses
+from a persona the session samples for itself, and places them without regard to the
+page. `imitate-content` also stretches each pause by the reading load of the page it
+leaves, as a reading person would. Both mirror the adversaries of ATI's `pf2-simulate`.
+"""
+LOAD_FACTOR: MappingProxyType[str, float] = MappingProxyType(
+    {"short": 0.8, "long": 1.6}
+)
+"""How much a page's reading load stretches a reader's pause; pinned to ATI's simulator."""
+_PERSONAL_PACE_SPREAD = 0.25
+_IRREGULARITY = (0.25, 0.55)
 _MARKER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _REQUEST_ID = re.compile(r"^[0-9a-f]{32}$")
 # An operator-assigned code such as p01. It groups one person's sessions so evaluation can
@@ -90,6 +108,7 @@ class SessionRecord:
     executor: str = EXECUTOR_ID
     scenario_version: str = SCENARIO_VERSION
     catalogue_version: str = CATALOGUE_VERSION
+    automation_pacing: str | None = None
     excluded: bool = False
     exclusion_reason: str | None = None
     requests: list[dict[str, object]] = field(default_factory=list)
@@ -110,6 +129,7 @@ class SessionRecord:
             "executor": self.executor,
             "scenario_version": self.scenario_version,
             "catalogue_version": self.catalogue_version,
+            "automation_pacing": self.automation_pacing,
             "excluded": self.excluded,
             "exclusion_reason": self.exclusion_reason,
             "request_count": len(self.requests),
@@ -174,7 +194,24 @@ def _validate(
     collection_window: str,
     participant: str | None,
     scenario_version: str = SCENARIO_VERSION,
+    automation_pacing: str | None = None,
 ) -> None:
+    if automation_pacing is not None:
+        if cohort != "automated":
+            raise LabSessionError(
+                "automation_pacing applies to the automated cohort only"
+            )
+        if automation_pacing not in AUTOMATION_PACINGS:
+            raise LabSessionError(
+                f"automation_pacing must be one of {list(AUTOMATION_PACINGS)}"
+            )
+        if (
+            automation_pacing == "imitate-content"
+            and scenario_version != READING_SCENARIO_VERSION
+        ):
+            raise LabSessionError(
+                "imitate-content needs the reading scenario, whose pages carry text"
+            )
     if scenario_version not in SCENARIO_VERSIONS:
         raise LabSessionError(f"scenario_version must be one of {list(SCENARIO_VERSIONS)}")
     if not _MARKER.fullmatch(marker):
@@ -212,9 +249,10 @@ def run_session(
     host: str = DEFAULT_HOST,
     fetch_assets: bool = True,
     scenario_version: str = SCENARIO_VERSION,
+    automation_pacing: str | None = None,
     prompt: Callable[[str], object] = input,
     display: Callable[[str], object] = print,
-    sleep: Callable[[float], object] = time.sleep,
+    sleep: Callable[[float], object] | None = None,
     rng: random.Random | None = None,
 ) -> SessionRecord:
     """Execute one closed-catalogue session and return only approved audit fields.
@@ -233,12 +271,18 @@ def run_session(
         collection_window=collection_window,
         participant=participant,
         scenario_version=scenario_version,
+        automation_pacing=automation_pacing,
     )
     steps = plan_session(task, fetch_assets=fetch_assets)
     reading = scenario_version == READING_SCENARIO_VERSION
     human = cohort == "human-consented"
     generator = rng or random.Random()
+    sleep = sleep or time.sleep
     low, high = PACING_VARIANTS[pacing_variant]
+    pacing = None if human else (automation_pacing or "timer")
+    pause = (
+        _Pacer(pacing, steps, generator, low, high, reading=reading) if pacing else None
+    )
     record = SessionRecord(
         marker=marker,
         cohort=cohort,
@@ -247,6 +291,7 @@ def run_session(
         collection_window=collection_window,
         participant=participant,
         scenario_version=scenario_version,
+        automation_pacing=pacing,
     )
     session_header: str | None = None
 
@@ -263,7 +308,8 @@ def run_session(
                     f"  [{sequence}/{len(steps)}] press Enter when ready for {step.path}: "
                 )
             else:
-                sleep(generator.uniform(low, high))
+                assert pause is not None
+                sleep(pause.next(page))
         headers = {"X-ATI-Experiment-ID": marker}
         if session_header is not None:
             headers["X-ATI-Lab-Session"] = session_header
@@ -304,6 +350,53 @@ def run_session(
     return record
 
 
+class _Pacer:
+    """Choose each automated pause, before navigations, for one session."""
+
+    def __init__(
+        self,
+        pacing: str,
+        steps: Sequence[Step],
+        generator: random.Random,
+        low: float,
+        high: float,
+        *,
+        reading: bool,
+    ) -> None:
+        self._pacing = pacing
+        self._generator = generator
+        self._low, self._high = low, high
+        self._reading = reading
+        self._misplaced: list[str] = []
+        if pacing == "timer":
+            # The timer draws nothing else, so its pauses are exactly those of before.
+            return
+        # A persona of the session's own: never a participant's traits.
+        self._pace = math.exp(generator.gauss(0.0, _PERSONAL_PACE_SPREAD))
+        self._irregularity = generator.uniform(*_IRREGULARITY)
+        # The content-blind mimic spends the session's loads in a shuffled order.
+        pages = [
+            str(step.path)
+            for step in steps
+            if PF2_ROUTE_CATEGORIES[str(step.path)] != "asset"
+        ]
+        self._misplaced = [READING_LOAD[path] for path in pages[:-1]]
+        generator.shuffle(self._misplaced)
+
+    def next(self, page: str | None) -> float:
+        if self._pacing == "timer":
+            return self._generator.uniform(self._low, self._high)
+        middle = self._pace * (self._low + self._high) / 2
+        pause = math.exp(self._generator.gauss(math.log(middle), self._irregularity))
+        if not self._reading:
+            return pause
+        if self._pacing == "imitate-content":
+            assert page is not None
+            return pause * LOAD_FACTOR[READING_LOAD[page]]
+        load = self._misplaced.pop(0) if self._misplaced else "short"
+        return pause * LOAD_FACTOR[load]
+
+
 def _page_text(path: str) -> str:
     content = PAGE_CONTENT[path]
     paragraphs = [textwrap.fill(paragraph, width=78) for paragraph in content.paragraphs]
@@ -341,6 +434,14 @@ def main(argv: list[str] | None = None) -> int:
         help="ati-pf2-1.1 shows a participant each page and fetches assets with their page.",
     )
     parser.add_argument(
+        "--automation-pacing",
+        choices=AUTOMATION_PACINGS,
+        help=(
+            "Automated cohort only: timer (default), imitate (person-like pauses placed "
+            "without regard to the page) or imitate-content (placed by reading load)."
+        ),
+    )
+    parser.add_argument(
         "--participant",
         help="Opaque code for a consenting participant, such as p01. Never a name.",
     )
@@ -372,6 +473,7 @@ def main(argv: list[str] | None = None) -> int:
             responder=responder,
             participant=args.participant,
             scenario_version=args.scenario_version,
+            automation_pacing=args.automation_pacing,
             host=args.host,
             fetch_assets=not args.no_assets,
         )
